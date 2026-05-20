@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 class DownloadQueue: ObservableObject {
     @Published var currentDownload: DownloadItem?
@@ -51,6 +52,9 @@ class DownloadQueue: ObservableObject {
                 if let completed = self.currentDownload {
                     self.history.insert(completed, at: 0)
                     self.trimHistory()
+                    if self.settings.autoCopyToClipboard {
+                        self.copyToClipboard(completed)
+                    }
                 }
                 self.currentDownload = nil
                 self.isProcessing = false
@@ -71,6 +75,15 @@ class DownloadQueue: ObservableObject {
         processedURLs.remove(item.url)
         history.removeAll { $0.id == item.id }
         enqueue(url: item.url, platform: item.platform)
+    }
+
+    func copyToClipboard(_ item: DownloadItem) {
+        guard let filePath = item.filePath else { return }
+        let fileURL = URL(fileURLWithPath: filePath)
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([fileURL as NSURL])
     }
 
     private func trimHistory() {
