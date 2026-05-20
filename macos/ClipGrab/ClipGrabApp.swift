@@ -51,7 +51,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: "ClipGrab")
+            if let iconPath = Bundle.main.path(forResource: "menubar_icon_18x18", ofType: "png") {
+                let img = NSImage(contentsOfFile: iconPath)
+                img?.isTemplate = true
+                img?.size = NSSize(width: 18, height: 18)
+                button.image = img
+            } else {
+                button.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: "ClipGrab")
+            }
             button.action = #selector(togglePopover)
             button.target = self
         }
