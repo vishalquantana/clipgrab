@@ -1,9 +1,11 @@
 import SwiftUI
 import AVKit
 
+/// Scrubbing video thumbnail — mouse X position maps to video timeline
 struct VideoThumbnailView: NSViewRepresentable {
     let filePath: String
     let isHovering: Bool
+    let scrubFraction: CGFloat  // 0.0 (left) to 1.0 (right)
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
@@ -22,25 +24,39 @@ struct VideoThumbnailView: NSViewRepresentable {
         ])
 
         let url = URL(fileURLWithPath: filePath)
-        let player = AVPlayer(url: url)
+        let asset = AVAsset(url: url)
+        let playerItem = AVPlayerItem(asset: asset)
+        let player = AVPlayer(playerItem: playerItem)
         player.isMuted = true
         playerView.player = player
 
-        // Seek to 1s for a good thumbnail frame
+        // Seek to 1s for initial thumbnail
         player.seek(to: CMTime(seconds: 1, preferredTimescale: 600))
         player.pause()
 
         context.coordinator.playerView = playerView
         context.coordinator.player = player
+        context.coordinator.asset = asset
 
         return container
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard let player = context.coordinator.player else { return }
+        guard let player = context.coordinator.player,
+              let asset = context.coordinator.asset else { return }
+
         if isHovering {
-            player.seek(to: .zero)
-            player.play()
+            player.pause()
+            let duration = asset.duration
+            guard duration.seconds.isFinite && duration.seconds > 0 else { return }
+            let fraction = max(0, min(1, Double(scrubFraction)))
+            let targetTime = CMTime(seconds: fraction * duration.seconds, preferredTimescale: 600)
+            // Only seek if position changed meaningfully (avoid excessive seeks)
+            let currentTime = player.currentTime().seconds
+            let targetSeconds = targetTime.seconds
+            if abs(currentTime - targetSeconds) > 0.1 {
+                player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+            }
         } else {
             player.pause()
             player.seek(to: CMTime(seconds: 1, preferredTimescale: 600))
@@ -52,6 +68,7 @@ struct VideoThumbnailView: NSViewRepresentable {
     class Coordinator {
         var playerView: AVPlayerView?
         var player: AVPlayer?
+        var asset: AVAsset?
     }
 }
 
@@ -61,6 +78,7 @@ struct DownloadItemRow: View {
     @State private var showCopied = false
     @State private var showLinkCopied = false
     @State private var isHovering = false
+    @State private var scrubFraction: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 12) {
@@ -69,7 +87,7 @@ struct DownloadItemRow: View {
                 if let thumbPath = item.thumbnailPath, FileManager.default.fileExists(atPath: thumbPath) {
                     // Show real thumbnail, play video on hover
                     if isHovering, item.mediaType == .video, let filePath = item.filePath, FileManager.default.fileExists(atPath: filePath) {
-                        VideoThumbnailView(filePath: filePath, isHovering: isHovering)
+                        VideoThumbnailView(filePath: filePath, isHovering: isHovering, scrubFraction: scrubFraction)
                             .frame(width: 56, height: 42)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                     } else if let nsImage = NSImage(contentsOfFile: thumbPath) {
@@ -102,6 +120,22 @@ struct DownloadItemRow: View {
                 }
             }
             .frame(width: 56, height: 42)
+            .overlay(
+                GeometryReader { geo in
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                scrubFraction = max(0, min(1, location.x / geo.size.width))
+                            case .ended:
+                                break
+                            @unknown default:
+                                break
+                            }
+                        }
+                }
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)

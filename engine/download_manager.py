@@ -434,15 +434,15 @@ def download(url: str, output_dir: Path, platform: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     existing_files = set(output_dir.iterdir())
 
-    # Try yt-dlp first
-    if _find_ytdlp():
-        success = _download_via_ytdlp(url, output_dir, platform, existing_files)
+    # For Twitter/X, try the syndication API first (yt-dlp hangs on guest token)
+    if platform == "twitter":
+        success = _download_twitter_direct(url, output_dir)
         if success:
             return
 
-    # Platform-specific direct API fallbacks (no third-party services)
-    if platform == "twitter":
-        success = _download_twitter_direct(url, output_dir)
+    # Try yt-dlp
+    if _find_ytdlp():
+        success = _download_via_ytdlp(url, output_dir, platform, existing_files)
         if success:
             return
 

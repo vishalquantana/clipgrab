@@ -101,6 +101,10 @@ ClipGrab is built with two layers:
 
 The same Python engine is used on both platforms. Only the UI and clipboard access differ per OS.
 
+## About Quantana
+
+ClipGrab is built by [Quantana](https://quantana.com.au), an AI-first advisory and consultancy firm. We partner with Fortune 500 companies to co-build AI-powered products and advise leaders on implementing AI securely, safely, and scalably across their organizations.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
