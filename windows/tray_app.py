@@ -35,8 +35,14 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 DOWNLOAD_DIR = Path.home() / "Downloads" / "ClipGrab"
-ENGINE_PATH = Path(__file__).resolve().parent.parent / "engine" / "download_manager.py"
 POLL_INTERVAL = 1.5  # seconds
+
+# Support both running from source and as a PyInstaller bundle
+if getattr(sys, "frozen", False):
+    _base = Path(sys._MEIPASS)
+    ENGINE_PATH = _base / "engine" / "download_manager.py"
+else:
+    ENGINE_PATH = Path(__file__).resolve().parent.parent / "engine" / "download_manager.py"
 
 PLATFORM_PATTERNS = [
     ("Instagram", ["instagram.com/p/", "instagram.com/reel", "instagram.com/stories/"]),
