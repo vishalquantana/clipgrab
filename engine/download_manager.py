@@ -90,7 +90,32 @@ def detect_platform(url: str) -> str:
 # Dependency checks
 # ---------------------------------------------------------------------------
 
+def _ensure_path() -> None:
+    """Ensure Homebrew paths are in PATH (not always set in app sandbox)."""
+    extra_paths = ["/opt/homebrew/bin", "/usr/local/bin"]
+    current = os.environ.get("PATH", "")
+    for p in extra_paths:
+        if p not in current:
+            current = p + ":" + current
+    os.environ["PATH"] = current
+
+
+def _find_ytdlp() -> Optional[str]:
+    """Find yt-dlp binary, preferring pipx and user-local installs."""
+    home = os.path.expanduser("~")
+    candidates = [
+        os.path.join(home, ".local", "bin", "yt-dlp"),
+        "/opt/homebrew/bin/yt-dlp",
+        "/usr/local/bin/yt-dlp",
+    ]
+    for path in candidates:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return shutil.which("yt-dlp")
+
+
 def check_dependencies() -> None:
+    _ensure_path()
     missing = []
     if shutil.which("yt-dlp") is None:
         missing.append("yt-dlp")
@@ -188,8 +213,7 @@ def download(url: str, output_dir: Path, platform: str) -> None:
         '"eta":%(progress.eta)s}'
     )
 
-    cmd = [
-        "yt-dlp",
+    ytdlp_args = [
         "--merge-output-format", "mp4",
         "--write-thumbnail",
         "--convert-thumbnails", "jpg",
@@ -198,6 +222,12 @@ def download(url: str, output_dir: Path, platform: str) -> None:
         "--output", output_template,
         url,
     ]
+
+    ytdlp_bin = _find_ytdlp()
+    if not ytdlp_bin:
+        die("yt-dlp not found. Install it and try again.", "MISSING_DEPENDENCY")
+
+    cmd = [ytdlp_bin] + ytdlp_args
 
     try:
         proc = subprocess.Popen(

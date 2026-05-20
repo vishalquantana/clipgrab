@@ -27,7 +27,7 @@ class DownloadEngine {
     private let scriptPath: String
 
     init() {
-        self.pythonPath = Self.findExecutable("python3") ?? "/usr/bin/python3"
+        self.pythonPath = Self.findPython()
         if let bundledScript = Bundle.main.url(forResource: "download_manager", withExtension: "py") {
             self.scriptPath = bundledScript.path
         } else {
@@ -75,14 +75,19 @@ class DownloadEngine {
         }
     }
 
-    private static func findExecutable(_ name: String) -> String? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        task.arguments = [name]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        try? task.run()
-        task.waitUntilExit()
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func findPython() -> String {
+        // Prefer stable Python versions over bleeding edge (3.14 has expat issues)
+        let candidates = [
+            "/opt/homebrew/bin/python3.13",
+            "/opt/homebrew/bin/python3.12",
+            "/opt/homebrew/bin/python3.11",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3"
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) { return path }
+        }
+        return "/usr/bin/python3"
     }
 }
