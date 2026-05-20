@@ -186,8 +186,10 @@ def _parse_progress_line(raw: str) -> Optional[dict]:
 
     def _safe_float(key: str) -> float:
         v = d.get(key)
+        if v is None or v == "NA" or v == "None" or v == "":
+            return 0.0
         try:
-            return float(v) if v is not None else 0.0
+            return float(v)
         except (TypeError, ValueError):
             return 0.0
 
@@ -238,14 +240,15 @@ def download(url: str, output_dir: Path, platform: str) -> None:
 
     output_template = str(output_dir / "%(title).80s_%(id)s.%(ext)s")
 
-    # yt-dlp progress JSON template (one JSON object per progress line)
+    # yt-dlp progress JSON template — all values quoted as strings to avoid
+    # invalid JSON when yt-dlp outputs "NA" or "None" for unknown values
     progress_template = (
         '{"status":"%(progress.status)s",'
         '"_percent_str":"%(progress._percent_str)s",'
-        '"downloaded_bytes":%(progress.downloaded_bytes)s,'
-        '"total_bytes":%(progress.total_bytes)s,'
-        '"total_bytes_estimate":%(progress.total_bytes_estimate)s,'
-        '"eta":%(progress.eta)s}'
+        '"downloaded_bytes":"%(progress.downloaded_bytes)s",'
+        '"total_bytes":"%(progress.total_bytes)s",'
+        '"total_bytes_estimate":"%(progress.total_bytes_estimate)s",'
+        '"eta":"%(progress.eta)s"}'
     )
 
     ytdlp_args = [

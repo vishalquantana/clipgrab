@@ -25,6 +25,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var setupWindow: NSWindow?
     private var eventMonitor: Any?
     private var tooltipTimer: Timer?
+    private var progressCancellable: AnyCancellable?
+    private var baseIcon: NSImage?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationService.shared.requestPermission()
@@ -64,6 +66,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(togglePopover)
             button.target = self
         }
+
+        // Store base icon for progress overlay
+        baseIcon = statusItem?.button?.image
+
+        // Observe download progress to update menu bar icon
+        progressCancellable = downloadQueue.$currentDownload
+            .receive(on: RunLoop.main)
+            .sink { [weak self] current in
+                self?.updateMenuBarIcon(download: current)
+            }
 
         let popover = NSPopover()
         popover.contentSize = NSSize(width: 340, height: 500)
@@ -150,6 +162,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.setupWindow = window
+    }
+
+    private func updateMenuBarIcon(download: DownloadItem?) {
+        guard let button = statusItem?.button else { return }
+
+        if let dl = download, dl.status == .downloading {
+            let progress = dl.progress / 100.0
+            let size: CGFloat = 18
+            let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+                // Draw base icon
+                if let base = self.baseIcon {
+                    base.draw(in: rect)
+                }
+
+                // Draw circular progress ring
+                let center = CGPoint(x: size / 2, y: size / 2)
+                let radius: CGFloat = size / 2 - 1
+                let lineWidth: CGFloat = 2
+
+                // Background ring
+                let bgPath = NSBezierPath()
+                bgPath.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
+                bgPath.lineWidth = lineWidth
+                NSColor.white.withAlphaComponent(0.2).setStroke()
+                bgPath.stroke()
+
+                // Progress ring (clockwise from top)
+                if progress > 0 {
+                    let startAngle: CGFloat = 90
+                    let endAngle: CGFloat = 90 - (360 * CGFloat(progress))
+                    let progressPath = NSBezierPath()
+                    progressPath.appendArc(withCenter: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
+                    progressPath.lineWidth = lineWidth
+                    progressPath.lineCapStyle = .round
+                    NSColor.systemBlue.setStroke()
+                    progressPath.stroke()
+                }
+
+                return true
+            }
+            img.isTemplate = false
+            button.image = img
+        } else {
+            // Restore base icon
+            if let base = baseIcon {
+                button.image = base
+            }
+        }
     }
 
     private func showMenuBarTooltip(_ message: String) {

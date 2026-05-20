@@ -36,14 +36,29 @@ class ClipboardMonitor: ObservableObject {
 
         guard let content = pasteboard.string(forType: .string) else { return }
 
+        // Take only the first line/word in case extra text was copied
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines).first ?? ""
 
-        guard !processedURLs.contains(trimmed) else { return }
+        let normalized = Self.normalizeURL(trimmed)
+        guard !processedURLs.contains(normalized) else { return }
         guard let platform = patterns.matchingPlatform(for: trimmed) else { return }
         guard settings.enabledPlatforms[platform.id] ?? true else { return }
 
-        processedURLs.insert(trimmed)
+        processedURLs.insert(normalized)
         detectedURL = (url: trimmed, platform: platform)
+    }
+
+    /// Strip tracking query params so ?s=20 and bare URL are treated as the same
+    private static func normalizeURL(_ url: String) -> String {
+        guard var components = URLComponents(string: url) else { return url }
+        // Remove common tracking params
+        let trackingParams: Set<String> = ["s", "utm_source", "utm_medium", "utm_campaign", "utm_content", "igsh", "rcm", "ref", "ref_src", "ref_url"]
+        if let items = components.queryItems {
+            let filtered = items.filter { !trackingParams.contains($0.name) }
+            components.queryItems = filtered.isEmpty ? nil : filtered
+        }
+        return components.string ?? url
     }
 
     func markProcessed(_ url: String) {

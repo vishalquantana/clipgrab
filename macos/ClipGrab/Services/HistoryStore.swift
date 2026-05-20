@@ -81,10 +81,13 @@ class HistoryStore {
     }
 
     func hasURL(_ url: String) -> Bool {
-        let sql = "SELECT COUNT(*) FROM downloads WHERE url = ?;"
+        // Strip query params for matching so ?s=20 doesn't bypass dedup
+        let baseURL = url.components(separatedBy: "?").first ?? url
+        let sql = "SELECT COUNT(*) FROM downloads WHERE url = ? OR url LIKE ? || '?%';"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_text(stmt, 1, url, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, baseURL, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         var exists = false
         if sqlite3_step(stmt) == SQLITE_ROW { exists = sqlite3_column_int(stmt, 0) > 0 }
         sqlite3_finalize(stmt)
