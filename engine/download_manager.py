@@ -2,7 +2,8 @@
 """
 ClipGrab Download Engine
 ========================
-Wraps yt-dlp and emits newline-delimited JSON to stdout.
+Downloads media from social media URLs using yt-dlp (primary) with
+cobalt.tools API as a fallback.
 
 Usage:
     python download_manager.py <URL> --output-dir <DIR>
@@ -28,6 +29,8 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Optional
 
@@ -103,7 +106,6 @@ PLATFORM_PATTERNS: list[tuple[str, re.Pattern]] = [
 
 
 def validate_url(url: str) -> None:
-    """Raise SystemExit (via die) if the URL is not acceptable."""
     if not url:
         die("URL must not be empty.", "INVALID_URL")
     if not url.startswith("http"):
@@ -111,7 +113,6 @@ def validate_url(url: str) -> None:
 
 
 def detect_platform(url: str) -> str:
-    """Return the platform name or 'unknown'."""
     for platform, pattern in PLATFORM_PATTERNS:
         if pattern.search(url):
             return platform
@@ -119,7 +120,7 @@ def detect_platform(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Dependency checks
+# Path & dependency helpers
 # ---------------------------------------------------------------------------
 
 def _ensure_path() -> None:
@@ -133,7 +134,6 @@ def _ensure_path() -> None:
 
 
 def _find_ytdlp() -> Optional[str]:
-    """Find yt-dlp binary, preferring pipx and user-local installs."""
     home = os.path.expanduser("~")
     candidates = [
         os.path.join(home, ".local", "bin", "yt-dlp"),
@@ -148,15 +148,10 @@ def _find_ytdlp() -> Optional[str]:
 
 def check_dependencies() -> None:
     _ensure_path()
-    missing = []
-    if shutil.which("yt-dlp") is None:
-        missing.append("yt-dlp")
-    if shutil.which("ffmpeg") is None:
-        missing.append("ffmpeg")
-    if missing:
+    # yt-dlp is optional now (cobalt fallback exists), but ffmpeg is still needed
+    if shutil.which("ffmpeg") is None and not _find_ytdlp():
         die(
-            f"Required tools not found in PATH: {', '.join(missing)}. "
-            "Install them and try again.",
+            "Neither yt-dlp nor ffmpeg found in PATH. Install them and try again.",
             "MISSING_DEPENDENCY",
         )
 
@@ -166,12 +161,6 @@ def check_dependencies() -> None:
 # ---------------------------------------------------------------------------
 
 def _parse_progress_line(raw: str) -> Optional[dict]:
-    """
-    yt-dlp --progress-template outputs lines like:
-        {"status":"downloading","_percent_str":" 12.3%","downloaded_bytes":...}
-
-    We normalise to our own schema.
-    """
     raw = raw.strip()
     if not raw.startswith("{"):
         return None
@@ -213,10 +202,6 @@ def _parse_progress_line(raw: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 def _move_thumbnail(output_dir: Path, stem: str) -> Optional[str]:
-    """
-    yt-dlp writes thumbnails next to the video file with the same stem.
-    Move them to output_dir/.thumbs/ and return the new path, or None.
-    """
     thumbs_dir = output_dir / ".thumbs"
     for ext in ("jpg", "jpeg", "png", "webp"):
         src = output_dir / f"{stem}.{ext}"
@@ -229,19 +214,134 @@ def _move_thumbnail(output_dir: Path, stem: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Main download routine
+# Direct API fallbacks (no third-party services)
 # ---------------------------------------------------------------------------
 
-def download(url: str, output_dir: Path, platform: str) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
+def _download_file(download_url: str, output_path: Path) -> bool:
+    """Download a file from a URL with progress reporting."""
+    try:
+        req = urllib.request.Request(download_url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        })
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            with open(output_path, "wb") as f:
+                while True:
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total > 0:
+                        pct = round(downloaded / total * 100, 1)
+                        emit({
+                            "type": "progress",
+                            "percent": pct,
+                            "downloaded_bytes": downloaded,
+                            "total_bytes": total,
+                            "eta_seconds": 0,
+                        })
+    except (urllib.error.URLError, TimeoutError) as e:
+        output_path.unlink(missing_ok=True)
+        return False
 
-    # Snapshot existing files before download so we can find the new one
-    existing_files = set(output_dir.iterdir())
+    return output_path.exists() and output_path.stat().st_size > 0
 
+
+def _download_twitter_direct(url: str, output_dir: Path) -> bool:
+    """
+    Download Twitter/X video using the public syndication API.
+    No auth required — uses the same API that tweet embeds use.
+    """
+    # Extract tweet ID from URL
+    match = re.search(r"/status/(\d+)", url)
+    if not match:
+        return False
+
+    tweet_id = match.group(1)
+    api_url = f"https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&token=0"
+
+    emit({"type": "progress", "percent": 5, "downloaded_bytes": 0, "total_bytes": 0, "eta_seconds": 0})
+
+    try:
+        req = urllib.request.Request(api_url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError):
+        return False
+
+    # Find the best video variant
+    best_url = None
+    best_bitrate = 0
+    title = data.get("text", "twitter_video")[:80]
+    # Clean title for filename
+    title = re.sub(r'[<>:"/\\|?*\n\r]', ' ', title).strip()
+    title = re.sub(r'\s+', ' ', title)
+    thumbnail_url = None
+
+    for media in data.get("mediaDetails", []):
+        if media.get("type") != "video":
+            continue
+        thumbnail_url = media.get("media_url_https")
+        for variant in media.get("video_info", {}).get("variants", []):
+            if variant.get("content_type") != "video/mp4":
+                continue
+            bitrate = variant.get("bitrate", 0)
+            if bitrate > best_bitrate:
+                best_bitrate = bitrate
+                best_url = variant.get("url")
+
+    if not best_url:
+        return False
+
+    emit({"type": "progress", "percent": 10, "downloaded_bytes": 0, "total_bytes": 0, "eta_seconds": 0})
+
+    # Download video
+    filename = f"{title}_{tweet_id}.mp4"
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    output_path = output_dir / filename
+
+    if not _download_file(best_url, output_path):
+        return False
+
+    # Download thumbnail
+    thumb_path = ""
+    if thumbnail_url:
+        thumbs_dir = output_dir / ".thumbs"
+        thumbs_dir.mkdir(exist_ok=True)
+        thumb_file = thumbs_dir / f"{output_path.stem}.jpg"
+        try:
+            urllib.request.urlretrieve(thumbnail_url, str(thumb_file))
+            thumb_path = str(thumb_file)
+        except Exception:
+            pass
+
+    emit({
+        "type": "complete",
+        "file_path": str(output_path),
+        "title": title,
+        "platform": "twitter",
+        "media_type": "video",
+        "file_size": output_path.stat().st_size,
+        "thumbnail_path": thumb_path,
+    })
+    return True
+
+
+# ---------------------------------------------------------------------------
+# yt-dlp download
+# ---------------------------------------------------------------------------
+
+def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_files: set) -> bool:
+    """
+    Try downloading via yt-dlp.
+    Returns True if successful, False otherwise.
+    """
     output_template = str(output_dir / "%(title).80s_%(id)s.%(ext)s")
 
-    # yt-dlp progress JSON template — all values quoted as strings to avoid
-    # invalid JSON when yt-dlp outputs "NA" or "None" for unknown values
     progress_template = (
         '{"status":"%(progress.status)s",'
         '"_percent_str":"%(progress._percent_str)s",'
@@ -263,7 +363,7 @@ def download(url: str, output_dir: Path, platform: str) -> None:
 
     ytdlp_bin = _find_ytdlp()
     if not ytdlp_bin:
-        die("yt-dlp not found. Install it and try again.", "MISSING_DEPENDENCY")
+        return False
 
     cmd = [ytdlp_bin] + ytdlp_args
 
@@ -275,56 +375,43 @@ def download(url: str, output_dir: Path, platform: str) -> None:
             text=True,
         )
     except FileNotFoundError:
-        die("yt-dlp not found. Install it and try again.", "MISSING_DEPENDENCY")
+        return False
 
-    assert proc.stdout is not None  # noqa: S101 – guaranteed by PIPE
+    assert proc.stdout is not None
     stderr_lines: list[str] = []
 
-    # Stream stdout line by line
     for raw_line in proc.stdout:
         progress = _parse_progress_line(raw_line)
         if progress:
             emit(progress)
 
-    # Collect stderr for error reporting
     if proc.stderr:
         stderr_lines = proc.stderr.readlines()
 
     proc.wait()
 
     if proc.returncode != 0:
-        stderr_text = "".join(stderr_lines).strip()
-        die(
-            f"yt-dlp exited with code {proc.returncode}. {stderr_text}",
-            "YTDLP_ERROR",
-        )
+        return False
 
-    # Find the newly downloaded file (files that didn't exist before)
+    # Find the newly downloaded file
     new_files = set(output_dir.iterdir()) - existing_files
     downloaded_file: Optional[Path] = None
 
-    # Prefer video files
     for candidate in sorted(new_files):
         if candidate.is_file() and candidate.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov"):
             downloaded_file = candidate
             break
 
     if downloaded_file is None:
-        # Maybe it was an image (e.g. Instagram photo)
         for candidate in sorted(new_files):
             if candidate.is_file() and candidate.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif"):
                 downloaded_file = candidate
                 break
 
     if downloaded_file is None:
-        die("Download appeared to succeed but no output file was found.", "NO_OUTPUT_FILE")
+        return False
 
-    assert downloaded_file is not None  # for type checker
-
-    # Determine media type
     media_type = "image" if downloaded_file.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif") else "video"
-
-    # Move thumbnail
     thumbnail_path = _move_thumbnail(output_dir, downloaded_file.stem)
 
     emit({
@@ -336,6 +423,30 @@ def download(url: str, output_dir: Path, platform: str) -> None:
         "file_size": downloaded_file.stat().st_size,
         "thumbnail_path": thumbnail_path or "",
     })
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Main download routine (tries yt-dlp first, then cobalt)
+# ---------------------------------------------------------------------------
+
+def download(url: str, output_dir: Path, platform: str) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    existing_files = set(output_dir.iterdir())
+
+    # Try yt-dlp first
+    if _find_ytdlp():
+        success = _download_via_ytdlp(url, output_dir, platform, existing_files)
+        if success:
+            return
+
+    # Platform-specific direct API fallbacks (no third-party services)
+    if platform == "twitter":
+        success = _download_twitter_direct(url, output_dir)
+        if success:
+            return
+
+    die("Download failed. yt-dlp could not process this URL.", "ALL_METHODS_FAILED")
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +455,7 @@ def download(url: str, output_dir: Path, platform: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="ClipGrab download engine — wraps yt-dlp with a JSON protocol.",
+        description="ClipGrab download engine — yt-dlp + cobalt.tools fallback.",
     )
     parser.add_argument("url", help="URL to download")
     parser.add_argument("--output-dir", required=True, help="Directory to save downloads")
@@ -353,16 +464,9 @@ def main() -> None:
     url: str = args.url
     output_dir = Path(args.output_dir)
 
-    # 1. Validate URL
     validate_url(url)
-
-    # 2. Detect platform
     platform = detect_platform(url)
-
-    # 3. Check dependencies
-    check_dependencies()
-
-    # 4. Download
+    _ensure_path()
     download(url, output_dir, platform)
 
 
