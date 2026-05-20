@@ -5,6 +5,7 @@ struct SetupAssistantView: View {
     @State private var ffmpegInstalled = false
     @State private var checking = true
     @State private var installing = false
+    @State private var installLog = ""
     var onComplete: () -> Void
 
     var body: some View {
@@ -36,6 +37,25 @@ struct SetupAssistantView: View {
                         Button(installing ? "Installing..." : "Install via Homebrew") { installDependencies() }
                             .buttonStyle(.borderedProminent)
                             .disabled(installing)
+
+                        if installing || !installLog.isEmpty {
+                            ScrollViewReader { proxy in
+                                ScrollView {
+                                    Text(installLog.isEmpty ? "Starting installation..." : installLog)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .id("logBottom")
+                                }
+                                .frame(height: 120)
+                                .padding(8)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(.black.opacity(0.3)))
+                                .onChange(of: installLog) { _ in
+                                    proxy.scrollTo("logBottom", anchor: .bottom)
+                                }
+                            }
+                        }
+
                         Text("Requires Homebrew. Run in Terminal:\nbrew install yt-dlp ffmpeg")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -64,29 +84,78 @@ struct SetupAssistantView: View {
 
     private func installDependencies() {
         installing = true
+        installLog = ""
         DispatchQueue.global().async {
+            let brewPath = Self.findBrew()
+            guard let brewPath else {
+                DispatchQueue.main.async {
+                    installLog = "Error: Homebrew not found.\nInstall it first: https://brew.sh\n\nRun in Terminal:\n/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                    installing = false
+                }
+                return
+            }
+
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = ["-c", "brew install yt-dlp ffmpeg"]
-            try? process.run()
-            process.waitUntilExit()
+            process.arguments = ["-c", "\(brewPath) install yt-dlp ffmpeg 2>&1"]
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty, let line = String(data: data, encoding: .utf8) else { return }
+                DispatchQueue.main.async {
+                    installLog += line
+                }
+            }
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                DispatchQueue.main.async {
+                    installLog += "\nFailed to run brew: \(error.localizedDescription)"
+                }
+            }
+
+            pipe.fileHandleForReading.readabilityHandler = nil
+
             DispatchQueue.main.async {
                 installing = false
+                if process.terminationStatus == 0 {
+                    installLog += "\n\nInstallation complete!"
+                } else {
+                    installLog += "\n\nInstallation failed (exit code \(process.terminationStatus))"
+                }
                 checkDependencies()
             }
         }
     }
 
+    private static func findBrew() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/brew",
+            "/usr/local/bin/brew",
+            "/home/linuxbrew/.linuxbrew/bin/brew"
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) { return path }
+        }
+        return nil
+    }
+
     private static func commandExists(_ name: String) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = [name]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try? process.run()
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+        let candidates = [
+            "/opt/homebrew/bin/\(name)",
+            "/usr/local/bin/\(name)",
+            "/usr/bin/\(name)"
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) { return true }
+        }
+        return false
     }
 }
 
