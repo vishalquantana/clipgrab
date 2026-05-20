@@ -56,11 +56,43 @@ def die(message: str, code: str, exit_code: int = 1) -> None:
 
 PLATFORM_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("instagram", re.compile(
-        r"instagram\.com/p/|instagram\.com/reel/|instagram\.com/stories/",
+        r"instagram\.com/p/|instagram\.com/reels?/|instagram\.com/stories/",
+        re.IGNORECASE,
+    )),
+    ("youtube", re.compile(
+        r"youtube\.com/watch|youtu\.be/|youtube\.com/shorts/",
+        re.IGNORECASE,
+    )),
+    ("tiktok", re.compile(
+        r"tiktok\.com/.+/video/|tiktok\.com/@.+|vm\.tiktok\.com/",
         re.IGNORECASE,
     )),
     ("twitter", re.compile(
         r"twitter\.com/.+/status/|x\.com/.+/status/",
+        re.IGNORECASE,
+    )),
+    ("reddit", re.compile(
+        r"reddit\.com/r/.+/comments/|redd\.it/",
+        re.IGNORECASE,
+    )),
+    ("facebook", re.compile(
+        r"facebook\.com/.+/videos/|facebook\.com/watch|fb\.watch/|facebook\.com/reel/",
+        re.IGNORECASE,
+    )),
+    ("threads", re.compile(
+        r"threads\.net/@.+/post/",
+        re.IGNORECASE,
+    )),
+    ("vimeo", re.compile(
+        r"vimeo\.com/\d+",
+        re.IGNORECASE,
+    )),
+    ("pinterest", re.compile(
+        r"pinterest\.com/pin/",
+        re.IGNORECASE,
+    )),
+    ("twitch", re.compile(
+        r"clips\.twitch\.tv/|twitch\.tv/.+/clip/",
         re.IGNORECASE,
     )),
     ("linkedin", re.compile(
@@ -201,6 +233,9 @@ def _move_thumbnail(output_dir: Path, stem: str) -> Optional[str]:
 def download(url: str, output_dir: Path, platform: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Snapshot existing files before download so we can find the new one
+    existing_files = set(output_dir.iterdir())
+
     output_template = str(output_dir / "%(title).80s_%(id)s.%(ext)s")
 
     # yt-dlp progress JSON template (one JSON object per progress line)
@@ -261,16 +296,19 @@ def download(url: str, output_dir: Path, platform: str) -> None:
             "YTDLP_ERROR",
         )
 
-    # Find the downloaded file (prefer .mp4)
+    # Find the newly downloaded file (files that didn't exist before)
+    new_files = set(output_dir.iterdir()) - existing_files
     downloaded_file: Optional[Path] = None
-    for candidate in sorted(output_dir.iterdir()):
+
+    # Prefer video files
+    for candidate in sorted(new_files):
         if candidate.is_file() and candidate.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov"):
             downloaded_file = candidate
             break
 
     if downloaded_file is None:
         # Maybe it was an image (e.g. Instagram photo)
-        for candidate in sorted(output_dir.iterdir()):
+        for candidate in sorted(new_files):
             if candidate.is_file() and candidate.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif"):
                 downloaded_file = candidate
                 break

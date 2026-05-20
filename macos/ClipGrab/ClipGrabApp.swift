@@ -23,6 +23,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let historyStore = HistoryStore()
     private var cancellables = Set<AnyCancellable>()
     private var setupWindow: NSWindow?
+    private var eventMonitor: Any?
+    private var tooltipTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationService.shared.requestPermission()
@@ -75,9 +77,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePopover() {
         guard let popover, let button = statusItem?.button else { return }
         if popover.isShown {
-            popover.performClose(nil)
+            closePopover()
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            NSApp.activate(ignoringOtherApps: true)
+            eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                self?.closePopover()
+            }
+        }
+    }
+
+    private func closePopover() {
+        popover?.performClose(nil)
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
         }
     }
 
@@ -113,6 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         title: latest.title,
                         mediaType: latest.mediaType.rawValue
                     )
+                    self.showMenuBarTooltip("Download done!")
                 } else if latest.status == .failed && self.settings.notificationsEnabled {
                     NotificationService.shared.notifyError(
                         message: latest.errorMessage ?? "Download failed"
@@ -135,6 +150,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.setupWindow = window
+    }
+
+    private func showMenuBarTooltip(_ message: String) {
+        if let button = statusItem?.button {
+            button.title = "  \(message)"
+            tooltipTimer?.invalidate()
+            tooltipTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
+                self?.statusItem?.button?.title = ""
+            }
+        }
     }
 
     private func cleanupPartialDownloads() {

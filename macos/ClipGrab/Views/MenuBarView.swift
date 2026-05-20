@@ -5,6 +5,8 @@ struct MenuBarView: View {
     @ObservedObject var downloadQueue: DownloadQueue
     @ObservedObject var settings: AppSettings
     @State private var showSettings = false
+    @State private var pasteURL = ""
+    @State private var showPasteField = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,12 +25,41 @@ struct MenuBarView: View {
                         .foregroundColor(.white.opacity(0.6))
                 }
                 Spacer()
+                Button(action: { withAnimation(.easeInOut(duration: 0.15)) { showPasteField.toggle() } }) {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(showPasteField ? 0.6 : 0.3))
+                }
+                .buttonStyle(.plain)
+                .help("Paste a URL to download")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .background(.white.opacity(0.03))
 
             Divider().background(.white.opacity(0.06))
+
+            // Paste URL field
+            if showPasteField {
+                HStack(spacing: 8) {
+                    TextField("Paste a URL...", text: $pasteURL)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .padding(6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.06)))
+                        .onSubmit { submitURL() }
+                    Button(action: submitURL) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(pasteURL.isEmpty ? .white.opacity(0.2) : .blue)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(pasteURL.isEmpty)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                Divider().background(.white.opacity(0.06))
+            }
 
             if let current = downloadQueue.currentDownload {
                 ProgressSection(item: current)
@@ -71,6 +102,24 @@ struct MenuBarView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
             }
+
+            // Credits
+            HStack(spacing: 0) {
+                Text("Made with ")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.2))
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 8))
+                    .foregroundColor(.red.opacity(0.4))
+                Text(" by ")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.2))
+                Link("Quantana", destination: URL(string: "https://quantana.com.au")!)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.35))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
 
             Divider().background(.white.opacity(0.06))
 
@@ -138,6 +187,35 @@ struct MenuBarView: View {
             return "Downloading..."
         }
         return "Watching clipboard"
+    }
+
+    private func submitURL() {
+        let url = pasteURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty, url.hasPrefix("http") else { return }
+        downloadQueue.enqueue(url: url, platform: detectPlatform(url))
+        pasteURL = ""
+        withAnimation { showPasteField = false }
+    }
+
+    private func detectPlatform(_ url: String) -> String {
+        let patterns: [(String, String)] = [
+            ("instagram", "instagram.com"),
+            ("youtube", "youtube.com"), ("youtube", "youtu.be"),
+            ("tiktok", "tiktok.com"),
+            ("twitter", "twitter.com"), ("twitter", "x.com"),
+            ("reddit", "reddit.com"), ("reddit", "redd.it"),
+            ("facebook", "facebook.com"), ("facebook", "fb.watch"),
+            ("threads", "threads.net"),
+            ("vimeo", "vimeo.com"),
+            ("pinterest", "pinterest.com"),
+            ("twitch", "twitch.tv"),
+            ("linkedin", "linkedin.com"),
+        ]
+        let lower = url.lowercased()
+        for (platform, domain) in patterns {
+            if lower.contains(domain) { return platform }
+        }
+        return "unknown"
     }
 
     private func openDownloadsFolder() {

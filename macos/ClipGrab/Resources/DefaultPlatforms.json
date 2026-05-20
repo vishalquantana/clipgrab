@@ -3,12 +3,52 @@
     {
       "name": "Instagram",
       "id": "instagram",
-      "patterns": ["instagram\\.com/p/", "instagram\\.com/reel/", "instagram\\.com/stories/"]
+      "patterns": ["instagram\\.com/p/", "instagram\\.com/reels?/", "instagram\\.com/stories/"]
+    },
+    {
+      "name": "YouTube",
+      "id": "youtube",
+      "patterns": ["youtube\\.com/watch", "youtu\\.be/", "youtube\\.com/shorts/"]
+    },
+    {
+      "name": "TikTok",
+      "id": "tiktok",
+      "patterns": ["tiktok\\.com/.+/video/", "tiktok\\.com/@.+", "vm\\.tiktok\\.com/"]
     },
     {
       "name": "Twitter/X",
       "id": "twitter",
       "patterns": ["twitter\\.com/.+/status/", "x\\.com/.+/status/"]
+    },
+    {
+      "name": "Reddit",
+      "id": "reddit",
+      "patterns": ["reddit\\.com/r/.+/comments/", "redd\\.it/"]
+    },
+    {
+      "name": "Facebook",
+      "id": "facebook",
+      "patterns": ["facebook\\.com/.+/videos/", "facebook\\.com/watch", "fb\\.watch/", "facebook\\.com/reel/"]
+    },
+    {
+      "name": "Threads",
+      "id": "threads",
+      "patterns": ["threads\\.net/@.+/post/"]
+    },
+    {
+      "name": "Vimeo",
+      "id": "vimeo",
+      "patterns": ["vimeo\\.com/\\d+"]
+    },
+    {
+      "name": "Pinterest",
+      "id": "pinterest",
+      "patterns": ["pinterest\\.com/pin/"]
+    },
+    {
+      "name": "Twitch",
+      "id": "twitch",
+      "patterns": ["clips\\.twitch\\.tv/", "twitch\\.tv/.+/clip/"]
     },
     {
       "name": "LinkedIn",
