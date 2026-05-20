@@ -1,0 +1,19 @@
+{
+  "platforms": [
+    {
+      "name": "Instagram",
+      "id": "instagram",
+      "patterns": ["instagram\\.com/p/", "instagram\\.com/reel/", "instagram\\.com/stories/"]
+    },
+    {
+      "name": "Twitter/X",
+      "id": "twitter",
+      "patterns": ["twitter\\.com/.+/status/", "x\\.com/.+/status/"]
+    },
+    {
+      "name": "LinkedIn",
+      "id": "linkedin",
+      "patterns": ["linkedin\\.com/posts/", "linkedin\\.com/feed/update/"]
+    }
+  ]
+}
