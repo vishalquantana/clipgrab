@@ -9,7 +9,18 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ClipGrab",
-            path: "ClipGrab"
+            path: "ClipGrab",
+            exclude: [
+                "Info.plist"
+            ],
+            resources: [
+                .copy("Resources/DefaultPlatforms.json")
+            ],
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+                .linkedFramework("AppKit"),
+                .linkedFramework("UserNotifications")
+            ]
         )
     ]
 )

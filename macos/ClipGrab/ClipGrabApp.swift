@@ -104,7 +104,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if latest.status == .complete && self.settings.notificationsEnabled {
                     NotificationService.shared.notifyDownloadComplete(
                         title: latest.title,
-                        mediaType: latest.mediaType?.rawValue ?? "video"
+                        mediaType: latest.mediaType.rawValue
                     )
                 } else if latest.status == .failed && self.settings.notificationsEnabled {
                     NotificationService.shared.notifyError(

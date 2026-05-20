@@ -46,7 +46,7 @@ class HistoryStore {
         sqlite3_bind_text(stmt, 3, item.platform, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 4, item.title, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 5, item.status.rawValue, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-        sqlite3_bind_text(stmt, 6, item.mediaType?.rawValue, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 6, item.mediaType.rawValue, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 7, item.filePath, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 8, item.thumbnailPath, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_int64(stmt, 9, item.fileSize ?? 0)
@@ -68,7 +68,7 @@ class HistoryStore {
             var item = DownloadItem(url: url, platform: platform)
             if let p = sqlite3_column_text(stmt, 3) { item.title = String(cString: p) }
             if let p = sqlite3_column_text(stmt, 4) { item.status = DownloadStatus(rawValue: String(cString: p)) ?? .complete }
-            if let p = sqlite3_column_text(stmt, 5) { item.mediaType = MediaType(rawValue: String(cString: p)) }
+            if let p = sqlite3_column_text(stmt, 5) { item.mediaType = MediaType(rawValue: String(cString: p)) ?? .video }
             if let p = sqlite3_column_text(stmt, 6) { item.filePath = String(cString: p) }
             if let p = sqlite3_column_text(stmt, 7) { item.thumbnailPath = String(cString: p) }
             item.fileSize = sqlite3_column_int64(stmt, 8)

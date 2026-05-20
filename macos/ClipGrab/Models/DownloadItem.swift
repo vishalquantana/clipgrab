@@ -16,7 +16,7 @@ struct DownloadItem: Identifiable, Codable {
     let id: UUID
     let url: String
     let platform: String
-    let title: String
+    var title: String
     var status: DownloadStatus
     var mediaType: MediaType
     var filePath: String?
@@ -27,7 +27,7 @@ struct DownloadItem: Identifiable, Codable {
     var totalBytes: Int64?
     var etaSeconds: Int?
     var errorMessage: String?
-    let createdAt: Date
+    var createdAt: Date
 
     init(url: String, platform: String) {
         self.id = UUID()
