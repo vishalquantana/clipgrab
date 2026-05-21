@@ -107,13 +107,25 @@ def copy_file_to_clipboard(file_path: str) -> bool:
         return False
 
 
-def create_icon_image(color: str = "green") -> Image.Image:
-    """Create a simple tray icon."""
+def _icon_path() -> Path:
+    """Resolve the path to icon.ico (works for source and PyInstaller)."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "icon.ico"
+    return Path(__file__).resolve().parent / "icon.ico"
+
+
+def load_icon_image() -> Image.Image:
+    """Load the ClipGrab .ico file, falling back to a generated icon."""
+    ico = _icon_path()
+    if ico.exists():
+        try:
+            return Image.open(str(ico))
+        except Exception:
+            pass
+    # Fallback: generate a simple icon
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    fill = (76, 175, 80, 255) if color == "green" else (66, 133, 244, 255)
-    draw.rounded_rectangle([4, 4, 60, 60], radius=12, fill=fill)
-    # Down arrow
+    draw.rounded_rectangle([4, 4, 60, 60], radius=12, fill=(76, 175, 80, 255))
     draw.polygon([(24, 22), (40, 22), (40, 38), (48, 38), (32, 52), (16, 38), (24, 38)], fill="white")
     return img
 
@@ -217,7 +229,6 @@ class ClipGrabTray:
 
     def _on_url_detected(self, url: str, platform: str):
         self._notify(f"Downloading from {platform}...")
-        self._set_icon_color("blue")
 
         def on_complete(title, file_path, plat):
             self.downloads.insert(0, {"title": title, "path": file_path, "platform": plat})
@@ -225,24 +236,18 @@ class ClipGrabTray:
                 self._notify(f"Done: {title}\nCopied to clipboard — paste anywhere!")
             else:
                 self._notify(f"Done: {title}")
-            self._set_icon_color("green")
 
         def on_error(message):
             self._notify(f"Error: {message}")
-            self._set_icon_color("green")
 
         download_media(url, platform, on_complete=on_complete, on_error=on_error)
 
     def _notify(self, message: str):
         if self.icon:
             try:
-                self.icon.notify(message, "ClipGrab")
+                self.icon.notify(message, "ClipGrab by Quantana")
             except Exception:
                 pass
-
-    def _set_icon_color(self, color: str):
-        if self.icon:
-            self.icon.icon = create_icon_image(color)
 
     def _open_folder(self):
         os.startfile(str(DOWNLOAD_DIR))
@@ -254,7 +259,7 @@ class ClipGrabTray:
 
     def run(self):
         menu = pystray.Menu(
-            pystray.MenuItem("ClipGrab - Watching clipboard", None, enabled=False),
+            pystray.MenuItem("ClipGrab by Quantana", None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open Downloads Folder", lambda: self._open_folder()),
             pystray.MenuItem("Quit", lambda: self._quit()),
@@ -262,8 +267,8 @@ class ClipGrabTray:
 
         self.icon = pystray.Icon(
             "ClipGrab",
-            create_icon_image("green"),
-            "ClipGrab - Watching clipboard",
+            load_icon_image(),
+            "ClipGrab by Quantana",
             menu,
         )
 
