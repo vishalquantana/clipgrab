@@ -13,8 +13,10 @@ Usage:
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
+import struct
 import subprocess
 import sys
 import threading
@@ -70,6 +72,39 @@ def detect_platform(url: str) -> str | None:
             if p in lower:
                 return name
     return None
+
+
+def copy_file_to_clipboard(file_path: str) -> bool:
+    """Copy a file to the Windows clipboard so it can be pasted in apps."""
+    try:
+        import ctypes.wintypes
+
+        CF_HDROP = 15
+        GHND = 0x0042
+
+        path = os.path.abspath(file_path)
+        # DROPFILES struct: 20 bytes header + wide-char file path + double null
+        path_wide = path.encode("utf-16-le") + b"\x00\x00"  # null-terminated
+        header = struct.pack("IIIIi", 20, 0, 0, 0, 1)  # pFiles=20, pt=(0,0), fNC=0, fWide=1
+        data = header + path_wide + b"\x00\x00"  # extra null for end of list
+
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+
+        hmem = kernel32.GlobalAlloc(GHND, len(data))
+        if not hmem:
+            return False
+        ptr = kernel32.GlobalLock(hmem)
+        ctypes.memmove(ptr, data, len(data))
+        kernel32.GlobalUnlock(hmem)
+
+        user32.OpenClipboard(None)
+        user32.EmptyClipboard()
+        user32.SetClipboardData(CF_HDROP, hmem)
+        user32.CloseClipboard()
+        return True
+    except Exception:
+        return False
 
 
 def create_icon_image(color: str = "green") -> Image.Image:
@@ -186,7 +221,10 @@ class ClipGrabTray:
 
         def on_complete(title, file_path, plat):
             self.downloads.insert(0, {"title": title, "path": file_path, "platform": plat})
-            self._notify(f"Done: {title}")
+            if file_path and copy_file_to_clipboard(file_path):
+                self._notify(f"Done: {title}\nCopied to clipboard — paste anywhere!")
+            else:
+                self._notify(f"Done: {title}")
             self._set_icon_color("green")
 
         def on_error(message):
