@@ -32,8 +32,12 @@ jobs:
           path: windows/dist/ClipGrab.exe
 
       - name: Upload to release
-        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} windows/dist/ClipGrab.exe --clobber
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName')
+          fi
+          gh release upload "$TAG" windows/dist/ClipGrab.exe --clobber
