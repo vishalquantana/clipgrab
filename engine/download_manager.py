@@ -140,8 +140,15 @@ def _find_ytdlp() -> Optional[str]:
         "/opt/homebrew/bin/yt-dlp",
         "/usr/local/bin/yt-dlp",
     ]
+    if sys.platform == "win32":
+        # Windows: yt-dlp installed via pip lands in Scripts/
+        candidates = [
+            os.path.join(home, "AppData", "Local", "Programs", "Python", "Scripts", "yt-dlp.exe"),
+            os.path.join(sys.prefix, "Scripts", "yt-dlp.exe"),
+            os.path.join(home, ".local", "bin", "yt-dlp.exe"),
+        ]
     for path in candidates:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
+        if os.path.isfile(path):
             return path
     return shutil.which("yt-dlp")
 
