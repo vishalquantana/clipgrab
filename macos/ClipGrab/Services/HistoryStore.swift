@@ -82,8 +82,9 @@ class HistoryStore {
 
     func hasURL(_ url: String) -> Bool {
         // Strip query params for matching so ?s=20 doesn't bypass dedup
+        // Only count successful downloads — failed ones should be retryable
         let baseURL = url.components(separatedBy: "?").first ?? url
-        let sql = "SELECT COUNT(*) FROM downloads WHERE url = ? OR url LIKE ? || '?%';"
+        let sql = "SELECT COUNT(*) FROM downloads WHERE (url = ? OR url LIKE ? || '?%') AND status != 'failed';"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_text(stmt, 1, url, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))

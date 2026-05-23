@@ -398,6 +398,12 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
     assert proc.stdout is not None
     stderr_lines: list[str] = []
 
+    # Extract video ID from URL for fallback file matching
+    video_id = ""
+    id_match = re.search(r"[?&]v=([^&]+)|/shorts/([^?&/]+)|youtu\.be/([^?&/]+)|/video/(\d+)|/status/(\d+)|/p/([^/?]+)|/reel[s]?/([^/?]+)", url)
+    if id_match:
+        video_id = next((g for g in id_match.groups() if g), "")
+
     for raw_line in proc.stdout:
         progress = _parse_progress_line(raw_line)
         if progress:
@@ -408,19 +414,29 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
 
     proc.wait()
 
-    # Find the newly downloaded file (check even on non-zero exit —
-    # yt-dlp may return 1 for thumbnail conversion errors while the video is fine)
+    # Find the downloaded file — check new files first, then fall back to
+    # matching by video ID (yt-dlp may skip download if file already exists)
     new_files = set(output_dir.iterdir()) - existing_files
     downloaded_file: Optional[Path] = None
 
+    video_exts = (".mp4", ".mkv", ".webm", ".mov")
+    image_exts = (".jpg", ".jpeg", ".png", ".gif")
+
+    # 1. Check newly created files
     for candidate in sorted(new_files):
-        if candidate.is_file() and candidate.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov"):
+        if candidate.is_file() and candidate.suffix.lower() in video_exts:
             downloaded_file = candidate
             break
-
     if downloaded_file is None:
         for candidate in sorted(new_files):
-            if candidate.is_file() and candidate.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif"):
+            if candidate.is_file() and candidate.suffix.lower() in image_exts:
+                downloaded_file = candidate
+                break
+
+    # 2. Fall back: find existing file matching the video ID
+    if downloaded_file is None and video_id:
+        for candidate in sorted(output_dir.iterdir()):
+            if candidate.is_file() and video_id in candidate.name and candidate.suffix.lower() in video_exts:
                 downloaded_file = candidate
                 break
 
