@@ -365,8 +365,19 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
         "--newline",
         "--progress-template", progress_template,
         "--output", output_template,
-        url,
     ]
+
+    # Help yt-dlp find ffmpeg
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if not ffmpeg_bin:
+        for p in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
+            if os.path.isfile(p):
+                ffmpeg_bin = p
+                break
+    if ffmpeg_bin:
+        ytdlp_args += ["--ffmpeg-location", ffmpeg_bin]
+
+    ytdlp_args.append(url)
 
     ytdlp_bin = _find_ytdlp()
     if not ytdlp_bin:
@@ -397,10 +408,8 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
 
     proc.wait()
 
-    if proc.returncode != 0:
-        return False
-
-    # Find the newly downloaded file
+    # Find the newly downloaded file (check even on non-zero exit —
+    # yt-dlp may return 1 for thumbnail conversion errors while the video is fine)
     new_files = set(output_dir.iterdir()) - existing_files
     downloaded_file: Optional[Path] = None
 

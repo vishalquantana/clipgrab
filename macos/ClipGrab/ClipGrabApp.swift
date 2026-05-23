@@ -235,14 +235,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func commandExists(_ name: String) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = [name]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try? process.run()
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "/opt/homebrew/bin/\(name)",
+            "/usr/local/bin/\(name)",
+            "\(home)/.local/bin/\(name)",
+        ]
+        return candidates.contains { FileManager.default.isExecutableFile(atPath: $0) }
     }
 }
