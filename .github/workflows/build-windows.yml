@@ -32,6 +32,7 @@ jobs:
           path: windows/dist/ClipGrab.exe
 
       - name: Upload to release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
