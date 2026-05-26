@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.2 — 2026-05-26
+
+### Bug Fixes
+- **Duplicate detection** — already-downloaded files are now detected, preventing re-downloads
+- **Retry failed downloads** — failed downloads can now be retried from the history list
+- **yt-dlp + ffmpeg integration** — yt-dlp now correctly finds ffmpeg; tolerates non-zero exit codes when file was actually downloaded
+- **Windows: yt-dlp discovery** — fixed finding yt-dlp in Python Scripts directory with `shutil.which` fallback
+- **Windows: build workflow** — `.exe` artifact now uploaded on manual workflow trigger too
+
 ## v1.0.1 — 2026-05-21
 
 ### New Features

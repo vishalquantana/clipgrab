@@ -4,6 +4,8 @@ ClipGrab monitors your clipboard for social media URLs and automatically downloa
 
 **Made with love by [Quantana](https://quantana.com.au)**
 
+![ClipGrab Screenshot](screenshot.png)
+
 ## Download
 
 | Platform | Download | Status |
