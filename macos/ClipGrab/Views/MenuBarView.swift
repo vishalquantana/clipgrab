@@ -82,9 +82,11 @@ struct MenuBarView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(downloadQueue.history.prefix(5)) { item in
-                        DownloadItemRow(item: item) {
-                            downloadQueue.copyToClipboard(item)
-                        }
+                        DownloadItemRow(
+                            item: item,
+                            onCopy: { downloadQueue.copyToClipboard(item) },
+                            onCopyAudio: { completion in downloadQueue.copyAudioToClipboard(item, completion: completion) }
+                        )
                     }
                 }
             }
