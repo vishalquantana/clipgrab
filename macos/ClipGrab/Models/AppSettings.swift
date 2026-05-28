@@ -4,6 +4,7 @@ import Combine
 class AppSettings: ObservableObject, Codable {
     @Published var downloadFolder: String
     @Published var mediaType: String
+    @Published var quality: String
     @Published var autoCopyToClipboard: Bool
     @Published var notificationsEnabled: Bool
     @Published var launchAtLogin: Bool
@@ -13,6 +14,7 @@ class AppSettings: ObservableObject, Codable {
     enum CodingKeys: String, CodingKey {
         case downloadFolder
         case mediaType
+        case quality
         case autoCopyToClipboard
         case notificationsEnabled
         case launchAtLogin
@@ -23,6 +25,7 @@ class AppSettings: ObservableObject, Codable {
     init(
         downloadFolder: String? = nil,
         mediaType: String = "all",
+        quality: String = "best",
         autoCopyToClipboard: Bool = true,
         notificationsEnabled: Bool = true,
         launchAtLogin: Bool = false,
@@ -36,6 +39,7 @@ class AppSettings: ObservableObject, Codable {
 
         self.downloadFolder = downloadFolder ?? defaultDownloadFolder
         self.mediaType = mediaType
+        self.quality = quality
         self.autoCopyToClipboard = autoCopyToClipboard
         self.notificationsEnabled = notificationsEnabled
         self.launchAtLogin = launchAtLogin
@@ -47,6 +51,7 @@ class AppSettings: ObservableObject, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         downloadFolder = try container.decode(String.self, forKey: .downloadFolder)
         mediaType = try container.decode(String.self, forKey: .mediaType)
+        quality = (try? container.decode(String.self, forKey: .quality)) ?? "best"
         autoCopyToClipboard = try container.decode(Bool.self, forKey: .autoCopyToClipboard)
         notificationsEnabled = try container.decode(Bool.self, forKey: .notificationsEnabled)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
@@ -58,6 +63,7 @@ class AppSettings: ObservableObject, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(downloadFolder, forKey: .downloadFolder)
         try container.encode(mediaType, forKey: .mediaType)
+        try container.encode(quality, forKey: .quality)
         try container.encode(autoCopyToClipboard, forKey: .autoCopyToClipboard)
         try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
         try container.encode(launchAtLogin, forKey: .launchAtLogin)
