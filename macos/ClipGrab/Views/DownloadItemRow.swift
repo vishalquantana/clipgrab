@@ -75,8 +75,11 @@ struct VideoThumbnailView: NSViewRepresentable {
 struct DownloadItemRow: View {
     let item: DownloadItem
     let onCopy: () -> Void
+    var onCopyAudio: (@escaping (Bool) -> Void) -> Void = { $0(false) }
     @State private var showCopied = false
     @State private var showLinkCopied = false
+    @State private var showMp3Copied = false
+    @State private var isExtractingAudio = false
     @State private var isHovering = false
     @State private var scrubFraction: CGFloat = 0
 
@@ -84,17 +87,19 @@ struct DownloadItemRow: View {
         HStack(spacing: 12) {
             // Thumbnail / video preview
             ZStack {
-                if let thumbPath = item.thumbnailPath, FileManager.default.fileExists(atPath: thumbPath) {
+                if item.mediaType == .audio {
+                    audioThumbnail
+                } else if let thumbPath = item.thumbnailPath, FileManager.default.fileExists(atPath: thumbPath) {
                     // Show real thumbnail, play video on hover
                     if isHovering, item.mediaType == .video, let filePath = item.filePath, FileManager.default.fileExists(atPath: filePath) {
                         VideoThumbnailView(filePath: filePath, isHovering: isHovering, scrubFraction: scrubFraction)
-                            .frame(width: 56, height: 42)
+                            .frame(width: 84, height: 63)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                     } else if let nsImage = NSImage(contentsOfFile: thumbPath) {
                         Image(nsImage: nsImage)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .frame(width: 56, height: 42)
+                            .frame(width: 84, height: 63)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .overlay(
                                 // Play icon overlay for videos
@@ -102,10 +107,10 @@ struct DownloadItemRow: View {
                                     if item.mediaType == .video {
                                         Circle()
                                             .fill(.black.opacity(0.45))
-                                            .frame(width: 20, height: 20)
+                                            .frame(width: 24, height: 24)
                                             .overlay(
                                                 Image(systemName: "play.fill")
-                                                    .font(.system(size: 8))
+                                                    .font(.system(size: 10))
                                                     .foregroundColor(.white)
                                                     .offset(x: 1)
                                             )
@@ -119,7 +124,7 @@ struct DownloadItemRow: View {
                     fallbackThumbnail
                 }
             }
-            .frame(width: 56, height: 42)
+            .frame(width: 84, height: 63)
             .overlay(
                 GeometryReader { geo in
                     Color.clear
@@ -164,10 +169,38 @@ struct DownloadItemRow: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.blue.opacity(0.8))
                         .transition(.opacity)
+                } else if showMp3Copied {
+                    Text("MP3 copied!")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.orange.opacity(0.9))
+                        .transition(.opacity)
+                } else if isExtractingAudio {
+                    Text("Extracting MP3...")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if item.status == .complete {
+                if item.mediaType == .video {
+                    Button(action: copyAudio) {
+                        if isExtractingAudio {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.6)
+                        } else {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.25))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 24, height: 28)
+                    .disabled(isExtractingAudio)
+                    .help("Extract & copy MP3")
+                }
+
                 Button(action: copyLink) {
                     Image(systemName: "link")
                         .font(.system(size: 12))
@@ -199,6 +232,8 @@ struct DownloadItemRow: View {
         }
         .animation(.easeInOut(duration: 0.2), value: showCopied)
         .animation(.easeInOut(duration: 0.2), value: showLinkCopied)
+        .animation(.easeInOut(duration: 0.2), value: showMp3Copied)
+        .animation(.easeInOut(duration: 0.2), value: isExtractingAudio)
     }
 
     @ViewBuilder
@@ -206,22 +241,44 @@ struct DownloadItemRow: View {
         ZStack {
             RoundedRectangle(cornerRadius: 6)
                 .fill(platformGradient)
-                .frame(width: 56, height: 42)
+                .frame(width: 84, height: 63)
             if item.mediaType == .video {
                 Circle()
                     .fill(.white.opacity(0.85))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 24, height: 24)
                     .overlay(
                         Image(systemName: "play.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 10))
                             .foregroundColor(.black)
                             .offset(x: 1)
                     )
             } else {
                 Image(systemName: "photo")
-                    .font(.system(size: 14))
+                    .font(.system(size: 16))
                     .foregroundColor(.white.opacity(0.9))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var audioThumbnail: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(platformGradient)
+                .frame(width: 84, height: 63)
+            if let thumbPath = item.thumbnailPath,
+               FileManager.default.fileExists(atPath: thumbPath),
+               let nsImage = NSImage(contentsOfFile: thumbPath) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 84, height: 63)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).fill(.black.opacity(0.25)))
+            }
+            Image(systemName: "music.note")
+                .font(.system(size: 18))
+                .foregroundColor(.white.opacity(0.95))
         }
     }
 
@@ -241,6 +298,23 @@ struct DownloadItemRow: View {
         showCopied = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
             showLinkCopied = false
+        }
+    }
+
+    private func copyAudio() {
+        guard !isExtractingAudio else { return }
+        isExtractingAudio = true
+        showCopied = false
+        showLinkCopied = false
+        showMp3Copied = false
+        onCopyAudio { success in
+            isExtractingAudio = false
+            if success {
+                showMp3Copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                    showMp3Copied = false
+                }
+            }
         }
     }
 
