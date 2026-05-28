@@ -342,7 +342,7 @@ def _download_twitter_direct(url: str, output_dir: Path) -> bool:
 # yt-dlp download
 # ---------------------------------------------------------------------------
 
-def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_files: set) -> bool:
+def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_files: set, quality: str = "best") -> bool:
     """
     Try downloading via yt-dlp.
     Returns True if successful, False otherwise.
@@ -359,13 +359,21 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
     )
 
     ytdlp_args = [
-        "--merge-output-format", "mp4",
         "--write-thumbnail",
         "--convert-thumbnails", "jpg",
         "--newline",
         "--progress-template", progress_template,
         "--output", output_template,
     ]
+
+    if quality == "audio":
+        ytdlp_args += ["-x", "--audio-format", "mp3", "--audio-quality", "0"]
+    else:
+        ytdlp_args += ["--merge-output-format", "mp4"]
+        if quality == "1080":
+            ytdlp_args += ["-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"]
+        elif quality == "720":
+            ytdlp_args += ["-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best"]
 
     # Help yt-dlp find ffmpeg
     ffmpeg_bin = shutil.which("ffmpeg")
@@ -421,29 +429,41 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
 
     video_exts = (".mp4", ".mkv", ".webm", ".mov")
     image_exts = (".jpg", ".jpeg", ".png", ".gif")
+    audio_exts = (".mp3", ".m4a", ".opus", ".aac", ".wav")
+
+    # Search order depends on quality: audio downloads look for audio files first.
+    if quality == "audio":
+        ext_order = (audio_exts, video_exts, image_exts)
+    else:
+        ext_order = (video_exts, image_exts, audio_exts)
 
     # 1. Check newly created files
-    for candidate in sorted(new_files):
-        if candidate.is_file() and candidate.suffix.lower() in video_exts:
-            downloaded_file = candidate
-            break
-    if downloaded_file is None:
+    for exts in ext_order:
         for candidate in sorted(new_files):
-            if candidate.is_file() and candidate.suffix.lower() in image_exts:
+            if candidate.is_file() and candidate.suffix.lower() in exts:
                 downloaded_file = candidate
                 break
+        if downloaded_file is not None:
+            break
 
     # 2. Fall back: find existing file matching the video ID
     if downloaded_file is None and video_id:
+        match_exts = audio_exts if quality == "audio" else video_exts
         for candidate in sorted(output_dir.iterdir()):
-            if candidate.is_file() and video_id in candidate.name and candidate.suffix.lower() in video_exts:
+            if candidate.is_file() and video_id in candidate.name and candidate.suffix.lower() in match_exts:
                 downloaded_file = candidate
                 break
 
     if downloaded_file is None:
         return False
 
-    media_type = "image" if downloaded_file.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif") else "video"
+    suffix = downloaded_file.suffix.lower()
+    if suffix in audio_exts:
+        media_type = "audio"
+    elif suffix in image_exts:
+        media_type = "image"
+    else:
+        media_type = "video"
     thumbnail_path = _move_thumbnail(output_dir, downloaded_file.stem)
 
     emit({
@@ -462,11 +482,12 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
 # Main download routine (tries yt-dlp first, then cobalt)
 # ---------------------------------------------------------------------------
 
-def download(url: str, output_dir: Path, platform: str) -> None:
+def download(url: str, output_dir: Path, platform: str, quality: str = "best") -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     existing_files = set(output_dir.iterdir())
 
-    # For Twitter/X, try the syndication API first (yt-dlp hangs on guest token)
+    # For Twitter/X, try the syndication API first (yt-dlp hangs on guest token).
+    # The syndication path always returns best-quality mp4 and ignores `quality`.
     if platform == "twitter":
         success = _download_twitter_direct(url, output_dir)
         if success:
@@ -474,7 +495,7 @@ def download(url: str, output_dir: Path, platform: str) -> None:
 
     # Try yt-dlp
     if _find_ytdlp():
-        success = _download_via_ytdlp(url, output_dir, platform, existing_files)
+        success = _download_via_ytdlp(url, output_dir, platform, existing_files, quality)
         if success:
             return
 
@@ -491,6 +512,12 @@ def main() -> None:
     )
     parser.add_argument("url", help="URL to download")
     parser.add_argument("--output-dir", required=True, help="Directory to save downloads")
+    parser.add_argument(
+        "--quality",
+        choices=["best", "1080", "720", "audio"],
+        default="best",
+        help="Download quality: best, 1080, 720, or audio (MP3)",
+    )
     args = parser.parse_args()
 
     url: str = args.url
@@ -499,7 +526,7 @@ def main() -> None:
     validate_url(url)
     platform = detect_platform(url)
     _ensure_path()
-    download(url, output_dir, platform)
+    download(url, output_dir, platform, args.quality)
 
 
 if __name__ == "__main__":
