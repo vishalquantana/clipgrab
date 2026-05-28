@@ -90,4 +90,34 @@ class DownloadEngine {
         }
         return "/usr/bin/python3"
     }
+
+    static func findFFmpeg() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "/usr/bin/ffmpeg",
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) { return path }
+        }
+        // Fallback: search PATH via `which`.
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["which", "ffmpeg"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let out = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !out.isEmpty, FileManager.default.fileExists(atPath: out) {
+                return out
+            }
+        } catch {
+            return nil
+        }
+        return nil
+    }
 }

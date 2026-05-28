@@ -90,6 +90,65 @@ class DownloadQueue: ObservableObject {
         pasteboard.writeObjects([fileURL as NSURL])
     }
 
+    /// Extracts audio (MP3) from a downloaded video via ffmpeg and copies it to the clipboard.
+    /// The MP3 is cached next to the source so repeat clicks are instant.
+    func copyAudioToClipboard(_ item: DownloadItem, completion: @escaping (Bool) -> Void) {
+        guard let filePath = item.filePath,
+              FileManager.default.fileExists(atPath: filePath) else {
+            completion(false)
+            return
+        }
+
+        let videoURL = URL(fileURLWithPath: filePath)
+        let mp3URL = videoURL.deletingPathExtension().appendingPathExtension("mp3")
+
+        func copyToPasteboard() {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.writeObjects([mp3URL as NSURL])
+        }
+
+        // Reuse a previously extracted, non-empty MP3.
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: mp3URL.path),
+           (attrs[.size] as? Int64 ?? 0) > 0 {
+            copyToPasteboard()
+            completion(true)
+            return
+        }
+
+        guard let ffmpeg = DownloadEngine.findFFmpeg() else {
+            completion(false)
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: ffmpeg)
+            process.arguments = [
+                "-y", "-i", videoURL.path,
+                "-vn", "-acodec", "libmp3lame", "-q:a", "2",
+                mp3URL.path,
+            ]
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
+
+            var success = false
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let size = (try? FileManager.default.attributesOfItem(atPath: mp3URL.path)[.size] as? Int64) ?? 0
+                success = process.terminationStatus == 0 && (size ?? 0) > 0
+            } catch {
+                success = false
+            }
+
+            DispatchQueue.main.async {
+                if success { copyToPasteboard() }
+                completion(success)
+            }
+        }
+    }
+
     private func trimHistory() {
         let limit = settings.historyLimit
         if limit > 0 && history.count > limit { history = Array(history.prefix(limit)) }
