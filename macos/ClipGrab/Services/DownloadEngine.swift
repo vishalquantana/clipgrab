@@ -36,11 +36,11 @@ class DownloadEngine {
         }
     }
 
-    func download(url: String, outputDir: String, onProgress: @escaping (ProgressUpdate) -> Void, onComplete: @escaping (CompletionResult) -> Void, onError: @escaping (DownloadError) -> Void) {
+    func download(url: String, outputDir: String, quality: String = "best", onProgress: @escaping (ProgressUpdate) -> Void, onComplete: @escaping (CompletionResult) -> Void, onError: @escaping (DownloadError) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: pythonPath)
-            process.arguments = [scriptPath, url, "--output-dir", outputDir]
+            process.arguments = [scriptPath, url, "--output-dir", outputDir, "--quality", quality]
             let stdout = Pipe()
             let stderr = Pipe()
             process.standardOutput = stdout

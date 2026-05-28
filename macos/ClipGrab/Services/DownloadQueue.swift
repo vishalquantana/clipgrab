@@ -33,7 +33,7 @@ class DownloadQueue: ObservableObject {
         item.status = .downloading
         currentDownload = item
 
-        engine.download(url: item.url, outputDir: settings.downloadFolder,
+        engine.download(url: item.url, outputDir: settings.downloadFolder, quality: settings.quality,
             onProgress: { [weak self] progress in
                 self?.currentDownload?.progress = progress.percent
                 self?.currentDownload?.downloadedBytes = progress.downloadedBytes
