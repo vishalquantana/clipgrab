@@ -137,7 +137,7 @@ class DownloadQueue: ObservableObject {
                 try process.run()
                 process.waitUntilExit()
                 let size = (try? FileManager.default.attributesOfItem(atPath: mp3URL.path)[.size] as? Int64) ?? 0
-                success = process.terminationStatus == 0 && (size ?? 0) > 0
+                success = process.terminationStatus == 0 && size > 0
             } catch {
                 success = false
             }
