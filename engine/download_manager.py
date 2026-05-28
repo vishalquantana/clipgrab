@@ -431,15 +431,22 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
     image_exts = (".jpg", ".jpeg", ".png", ".gif")
     audio_exts = (".mp3", ".m4a", ".opus", ".aac", ".wav")
 
+    # yt-dlp leaves per-format fragment files (e.g. "Title.f251.webm") when it
+    # downloads separate video/audio streams but cannot merge them — which
+    # happens when ffmpeg is missing or broken. These are not usable output.
+    fragment_re = re.compile(r"\.f\d+\.[^.]+$", re.IGNORECASE)
+    new_fragments = [f for f in new_files if f.is_file() and fragment_re.search(f.name)]
+    selectable = [f for f in new_files if f not in new_fragments]
+
     # Search order depends on quality: audio downloads look for audio files first.
     if quality == "audio":
         ext_order = (audio_exts, video_exts, image_exts)
     else:
         ext_order = (video_exts, image_exts, audio_exts)
 
-    # 1. Check newly created files
+    # 1. Check newly created files (ignoring unmerged fragments)
     for exts in ext_order:
-        for candidate in sorted(new_files):
+        for candidate in sorted(selectable):
             if candidate.is_file() and candidate.suffix.lower() in exts:
                 downloaded_file = candidate
                 break
@@ -450,14 +457,33 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
     if downloaded_file is None and video_id:
         match_exts = audio_exts if quality == "audio" else video_exts
         for candidate in sorted(output_dir.iterdir()):
-            if candidate.is_file() and video_id in candidate.name and candidate.suffix.lower() in match_exts:
+            if (candidate.is_file() and video_id in candidate.name
+                    and candidate.suffix.lower() in match_exts
+                    and not fragment_re.search(candidate.name)):
                 downloaded_file = candidate
                 break
+
+    # Guard: ffmpeg merge failed — only leftover fragments, no usable output.
+    if downloaded_file is None and new_fragments:
+        die(
+            "ffmpeg could not merge the video and audio streams. Make sure ffmpeg "
+            "is installed and working (try: brew reinstall ffmpeg).",
+            "FFMPEG_MERGE_FAILED",
+        )
 
     if downloaded_file is None:
         return False
 
     suffix = downloaded_file.suffix.lower()
+
+    # Guard: audio-only was requested but ffmpeg did not produce an MP3.
+    if quality == "audio" and suffix != ".mp3":
+        die(
+            "ffmpeg could not convert the audio to MP3. Make sure ffmpeg is "
+            "installed and working (try: brew reinstall ffmpeg).",
+            "FFMPEG_AUDIO_FAILED",
+        )
+
     if suffix in audio_exts:
         media_type = "audio"
     elif suffix in image_exts:
