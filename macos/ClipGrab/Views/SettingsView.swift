@@ -38,6 +38,17 @@ struct SettingsView: View {
                 .padding(4)
             }
 
+            GroupBox("Quality") {
+                Picker("Download quality", selection: $settings.quality) {
+                    Text("Best available").tag("best")
+                    Text("1080p").tag("1080")
+                    Text("720p").tag("720")
+                    Text("Audio only (MP3)").tag("audio")
+                }
+                .pickerStyle(.radioGroup)
+                .padding(4)
+            }
+
             GroupBox("Monitored Platforms") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Instagram", isOn: platformBinding("instagram"))
