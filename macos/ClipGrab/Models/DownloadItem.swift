@@ -10,6 +10,7 @@ enum DownloadStatus: String, Codable {
 enum MediaType: String, Codable {
     case video
     case image
+    case audio
 }
 
 struct DownloadItem: Identifiable, Codable {

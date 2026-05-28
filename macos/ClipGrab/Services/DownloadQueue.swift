@@ -47,7 +47,11 @@ class DownloadQueue: ObservableObject {
                 self.currentDownload?.filePath = result.filePath
                 self.currentDownload?.thumbnailPath = result.thumbnailPath
                 self.currentDownload?.fileSize = result.fileSize
-                self.currentDownload?.mediaType = result.mediaType == "video" ? .video : .image
+                switch result.mediaType {
+                case "audio": self.currentDownload?.mediaType = .audio
+                case "image": self.currentDownload?.mediaType = .image
+                default: self.currentDownload?.mediaType = .video
+                }
                 self.currentDownload?.progress = 100
                 if let completed = self.currentDownload {
                     self.history.insert(completed, at: 0)
