@@ -16,11 +16,12 @@ ClipGrab monitors your clipboard for social media URLs and automatically downloa
 ## Features
 
 - Monitors clipboard for social media URLs — just copy a link and it downloads automatically
-- Downloads media at the highest available quality
+- Choose download quality: Best, 1080p, 720p, or Audio only (MP3)
 - Automatically converts video to MP4 via ffmpeg
+- Extract and copy just the audio (MP3) from any downloaded video with one click
 - Places the downloaded file directly on your clipboard — paste into Slack, iMessage, email, etc.
 - Paste URL manually via the + button in the dropdown
-- Video thumbnail previews with hover-to-play
+- Large video thumbnail previews with hover-to-play
 - Download history with one-click re-copy
 - Copy original URL or downloaded media independently
 
