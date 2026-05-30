@@ -342,6 +342,8 @@ struct DownloadItemRow: View {
             return LinearGradient(colors: [Color(red: 0.57, green: 0.27, blue: 1.0), Color(red: 0.45, green: 0.15, blue: 0.9)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case "linkedin":
             return LinearGradient(colors: [Color(red: 0, green: 0.26, blue: 0.51), Color(red: 0, green: 0.47, blue: 0.71)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case "9gag":
+            return LinearGradient(colors: [.black, Color(red: 0.15, green: 0.15, blue: 0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
         default:
             return LinearGradient(colors: [.gray], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
@@ -360,6 +362,7 @@ struct DownloadItemRow: View {
         case "pinterest": return "Pinterest"
         case "twitch": return "Twitch"
         case "linkedin": return "LinkedIn"
+        case "9gag": return "9GAG"
         default: return item.platform.capitalized
         }
     }

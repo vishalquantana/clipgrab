@@ -23,7 +23,7 @@
     {
       "name": "Reddit",
       "id": "reddit",
-      "patterns": ["reddit\\.com/r/.+/comments/", "redd\\.it/"]
+      "patterns": ["reddit\\.com/r/.+/(comments|s)/", "redd\\.it/"]
     },
     {
       "name": "Facebook",
@@ -54,6 +54,11 @@
       "name": "LinkedIn",
       "id": "linkedin",
       "patterns": ["linkedin\\.com/posts/", "linkedin\\.com/feed/update/"]
+    },
+    {
+      "name": "9GAG",
+      "id": "9gag",
+      "patterns": ["9gag\\.com/gag/"]
     }
   ]
 }

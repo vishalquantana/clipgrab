@@ -75,7 +75,7 @@ PLATFORM_PATTERNS: list[tuple[str, re.Pattern]] = [
         re.IGNORECASE,
     )),
     ("reddit", re.compile(
-        r"reddit\.com/r/.+/comments/|redd\.it/",
+        r"reddit\.com/r/.+/(comments|s)/|redd\.it/",
         re.IGNORECASE,
     )),
     ("facebook", re.compile(
@@ -100,6 +100,10 @@ PLATFORM_PATTERNS: list[tuple[str, re.Pattern]] = [
     )),
     ("linkedin", re.compile(
         r"linkedin\.com/posts/|linkedin\.com/feed/update/",
+        re.IGNORECASE,
+    )),
+    ("9gag", re.compile(
+        r"9gag\.com/gag/",
         re.IGNORECASE,
     )),
 ]

@@ -212,6 +212,7 @@ struct MenuBarView: View {
             ("pinterest", "pinterest.com"),
             ("twitch", "twitch.tv"),
             ("linkedin", "linkedin.com"),
+            ("9gag", "9gag.com"),
         ]
         let lower = url.lowercased()
         for (platform, domain) in patterns {

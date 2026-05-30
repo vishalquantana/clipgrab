@@ -53,6 +53,8 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Instagram", isOn: platformBinding("instagram"))
                     Toggle("Twitter/X", isOn: platformBinding("twitter"))
+                    Toggle("Reddit", isOn: platformBinding("reddit"))
+                    Toggle("9GAG", isOn: platformBinding("9gag"))
                     Toggle("LinkedIn", isOn: platformBinding("linkedin"))
                 }
                 .padding(4)

@@ -58,6 +58,7 @@ PLATFORM_PATTERNS = [
     ("Pinterest", ["pinterest.com/pin/"]),
     ("Twitch", ["twitch.tv/"]),
     ("LinkedIn", ["linkedin.com/posts/", "linkedin.com/feed/update/"]),
+    ("9GAG", ["9gag.com/gag/"]),
 ]
 
 

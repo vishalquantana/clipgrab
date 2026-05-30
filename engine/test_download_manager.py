@@ -171,6 +171,24 @@ class TestPlatformDetection:
         code = self._get_error_code(url)
         assert code != "INVALID_URL", f"URL wrongly rejected as invalid: {url}"
 
+    @pytest.mark.parametrize("url", [
+        "https://www.reddit.com/r/Python/comments/12345/some_title/",
+        "https://redd.it/12345",
+        "https://www.reddit.com/r/Python/s/G77k7tHqG0",
+    ])
+    def test_reddit_urls_pass_validation(self, url):
+        code = self._get_error_code(url)
+        assert code != "INVALID_URL", f"URL wrongly rejected as invalid: {url}"
+
+    @pytest.mark.parametrize("url", [
+        "https://9gag.com/gag/aMX8WKo",
+        "https://9gag.com/gag/aNDeXZG",
+    ])
+    def test_9gag_urls_pass_validation(self, url):
+        code = self._get_error_code(url)
+        assert code != "INVALID_URL", f"URL wrongly rejected as invalid: {url}"
+
+
 
 # ---------------------------------------------------------------------------
 # Integration tests (require network + yt-dlp + ffmpeg)

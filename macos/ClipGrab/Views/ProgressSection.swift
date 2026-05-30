@@ -52,7 +52,9 @@ struct ProgressSection: View {
         switch item.platform {
         case "instagram": return "Instagram"
         case "twitter": return "Twitter/X"
+        case "reddit": return "Reddit"
         case "linkedin": return "LinkedIn"
+        case "9gag": return "9GAG"
         default: return item.platform.capitalized
         }
     }
