@@ -30,6 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationService.shared.requestPermission()
+        UpdateManager.shared.checkForUpdates()
 
         try? FileManager.default.createDirectory(
             atPath: settings.downloadFolder,

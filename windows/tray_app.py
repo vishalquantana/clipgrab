@@ -38,6 +38,7 @@ except ImportError:
 
 DOWNLOAD_DIR = Path.home() / "Downloads" / "ClipGrab"
 POLL_INTERVAL = 1.5  # seconds
+VERSION = "1.1.0"
 
 # Support both running from source and as a PyInstaller bundle
 if getattr(sys, "frozen", False):
@@ -227,6 +228,9 @@ class ClipGrabTray:
         self.icon: pystray.Icon | None = None
         self.monitor = ClipboardMonitor(on_url_detected=self._on_url_detected)
         self.downloads: list[dict] = []
+        self.update_available = False
+        self.latest_version = None
+        self.update_url = None
 
     def _on_url_detected(self, url: str, platform: str):
         self._notify(f"Downloading from {platform}...")
@@ -258,22 +262,124 @@ class ClipGrabTray:
         if self.icon:
             self.icon.stop()
 
-    def run(self):
-        menu = pystray.Menu(
-            pystray.MenuItem("ClipGrab by Quantana", None, enabled=False),
+    def rebuild_menu(self):
+        menu_items = [
+            pystray.MenuItem(f"ClipGrab by Quantana (v{VERSION})", None, enabled=False),
+        ]
+        if self.update_available:
+            menu_items.append(pystray.MenuItem(f"✨ Update to v{self.latest_version}", lambda: self._start_update()))
+        menu_items.extend([
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open Downloads Folder", lambda: self._open_folder()),
             pystray.MenuItem("Quit", lambda: self._quit()),
-        )
+        ])
 
-        self.icon = pystray.Icon(
-            "ClipGrab",
-            load_icon_image(),
-            "ClipGrab by Quantana",
-            menu,
-        )
+        if self.icon:
+            self.icon.menu = pystray.Menu(*menu_items)
+        else:
+            self.icon = pystray.Icon(
+                "ClipGrab",
+                load_icon_image(),
+                "ClipGrab by Quantana",
+                pystray.Menu(*menu_items),
+            )
 
+    def _parse_version(self, ver_str: str) -> tuple[int, ...]:
+        try:
+            return tuple(int(x) for x in ver_str.split("."))
+        except Exception:
+            return (0,)
+
+    def _check_for_updates(self):
+        # Delay update check slightly to not slow down app startup
+        time.sleep(3)
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                "https://api.github.com/repos/vishalquantana/clipgrab/releases/latest",
+                headers={"User-Agent": "ClipGrab-Updater"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+
+            latest_tag = data.get("tag_name", f"v{VERSION}")
+            latest_version = latest_tag.lstrip("v")
+
+            if self._parse_version(latest_version) > self._parse_version(VERSION):
+                self.latest_version = latest_version
+                self.update_available = True
+
+                # Find download URL for ClipGrab.exe
+                self.update_url = None
+                for asset in data.get("assets", []):
+                    if asset.get("name") == "ClipGrab.exe":
+                        self.update_url = asset.get("browser_download_url")
+                        break
+
+                if self.update_url:
+                    self.rebuild_menu()
+                    self._notify(f"✨ Update available: v{latest_version}\nClick the tray icon to install.")
+        except Exception as e:
+            print(f"Update check failed: {e}")
+
+    def _start_update(self):
+        if not self.update_url:
+            return
+
+        self._notify("Downloading update in the background...")
+
+        def _download_and_install():
+            try:
+                import urllib.request
+                import tempfile
+                import shutil
+
+                temp_dir = tempfile.gettempdir()
+                temp_exe = os.path.join(temp_dir, "ClipGrab_new.exe")
+
+                req = urllib.request.Request(
+                    self.update_url,
+                    headers={"User-Agent": "ClipGrab-Updater"}
+                )
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    with open(temp_exe, "wb") as f:
+                        f.write(resp.read())
+
+                if not os.path.exists(temp_exe) or os.path.getsize(temp_exe) < 1000000:
+                    raise Exception("Downloaded update file is invalid or incomplete")
+
+                if not getattr(sys, "frozen", False):
+                    self._notify("Developer mode: downloaded ClipGrab.exe to temp folder. Replacement skipped.")
+                    return
+
+                current_exe = sys.executable
+                dir_name = os.path.dirname(current_exe)
+                old_exe = os.path.join(dir_name, "ClipGrab.old.exe")
+                new_exe = os.path.join(dir_name, "ClipGrab.exe")
+
+                if os.path.exists(old_exe):
+                    try:
+                        os.remove(old_exe)
+                    except Exception:
+                        pass
+
+                os.rename(current_exe, old_exe)
+                shutil.move(temp_exe, new_exe)
+
+                subprocess.Popen([new_exe])
+                subprocess.Popen(f'cmd.exe /c timeout /t 2 & del "{old_exe}"', shell=True)
+
+                self._quit()
+            except Exception as e:
+                self._notify(f"Update failed: {e}")
+
+        threading.Thread(target=_download_and_install, daemon=True).start()
+
+    def run(self):
+        self.rebuild_menu()
         self.monitor.start()
+
+        threading.Thread(target=self._check_for_updates, daemon=True).start()
         self.icon.run()
 
 

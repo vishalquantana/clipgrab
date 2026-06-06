@@ -53,7 +53,7 @@ class ClipboardMonitor: ObservableObject {
     private static func normalizeURL(_ url: String) -> String {
         guard var components = URLComponents(string: url) else { return url }
         // Remove common tracking params
-        let trackingParams: Set<String> = ["s", "utm_source", "utm_medium", "utm_campaign", "utm_content", "igsh", "rcm", "ref", "ref_src", "ref_url"]
+        let trackingParams: Set<String> = ["s", "si", "utm_source", "utm_medium", "utm_campaign", "utm_content", "igsh", "rcm", "ref", "ref_src", "ref_url"]
         if let items = components.queryItems {
             let filtered = items.filter { !trackingParams.contains($0.name) }
             components.queryItems = filtered.isEmpty ? nil : filtered

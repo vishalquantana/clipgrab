@@ -4,6 +4,7 @@ import AppKit
 struct MenuBarView: View {
     @ObservedObject var downloadQueue: DownloadQueue
     @ObservedObject var settings: AppSettings
+    @ObservedObject var updateManager = UpdateManager.shared
     @State private var showSettings = false
     @State private var pasteURL = ""
     @State private var showPasteField = false
@@ -58,6 +59,50 @@ struct MenuBarView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
+                Divider().background(.white.opacity(0.06))
+            }
+
+            // Update Banner
+            if updateManager.isUpdateAvailable {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Update Available (v\(updateManager.latestVersion ?? ""))")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.orange)
+                        if let err = updateManager.errorMessage {
+                            Text(err)
+                                .font(.system(size: 9))
+                                .foregroundColor(.red.opacity(0.8))
+                        } else if updateManager.isUpdating {
+                            ProgressView(value: updateManager.updateProgress)
+                                .progressViewStyle(.linear)
+                                .tint(.orange)
+                                .frame(width: 150)
+                        } else {
+                            Text("A new version is ready to install.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                    }
+                    Spacer()
+                    Button(action: { updateManager.startUpdate() }) {
+                        Text(updateManager.isUpdating ? "\(Int(updateManager.updateProgress * 100))%" : "Update")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.orange)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(updateManager.isUpdating)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.orange.opacity(0.08))
                 Divider().background(.white.opacity(0.06))
             }
 
