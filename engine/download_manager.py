@@ -137,24 +137,76 @@ def _ensure_path() -> None:
     os.environ["PATH"] = current
 
 
-def _find_ytdlp() -> Optional[str]:
+def _ytdlp_runs(path: str) -> bool:
+    """
+    Return True only if the binary at `path` can actually execute.
+
+    A present-but-broken yt-dlp is common: pip/pipx/Homebrew installs use a
+    shebang pointing at a specific Python interpreter, and a Python upgrade
+    (e.g. 3.13 -> 3.14) leaves that interpreter gone, so the script exists on
+    disk but every invocation fails with "bad interpreter". Checking existence
+    is not enough — we must run it.
+    """
+    if not path:
+        return False
+    try:
+        proc = subprocess.run(
+            [path, "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            # Generous: the self-contained (PyInstaller) build can take several
+            # seconds to unpack on a cold start before it prints its version.
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
+
+
+def _ytdlp_candidates() -> list[str]:
+    """Ordered list of yt-dlp locations to try, most-preferred first."""
     home = os.path.expanduser("~")
-    candidates = [
-        os.path.join(home, ".local", "bin", "yt-dlp"),
-        "/opt/homebrew/bin/yt-dlp",
-        "/usr/local/bin/yt-dlp",
-    ]
+    # A binary bundled alongside this script (e.g. inside ClipGrab.app's
+    # Resources) is self-contained and immune to system Python breakage, so
+    # it is always preferred.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    bundled_name = "yt-dlp.exe" if sys.platform == "win32" else "yt-dlp"
+    candidates = [os.path.join(script_dir, bundled_name)]
+
     if sys.platform == "win32":
-        # Windows: yt-dlp installed via pip lands in Scripts/
-        candidates = [
+        candidates += [
             os.path.join(home, "AppData", "Local", "Programs", "Python", "Scripts", "yt-dlp.exe"),
             os.path.join(sys.prefix, "Scripts", "yt-dlp.exe"),
             os.path.join(home, ".local", "bin", "yt-dlp.exe"),
         ]
-    for path in candidates:
-        if os.path.isfile(path):
+    else:
+        candidates += [
+            os.path.join(home, ".local", "bin", "yt-dlp"),
+            "/opt/homebrew/bin/yt-dlp",
+            "/usr/local/bin/yt-dlp",
+        ]
+    return candidates
+
+
+def _find_ytdlp() -> Optional[str]:
+    """
+    Return the path to a *working* yt-dlp, or None.
+
+    Unlike a plain existence check, this validates that each candidate can
+    actually run, so a broken install (dangling shebang after a Python
+    upgrade) is skipped in favour of a working one.
+
+    NOTE: the download path does NOT use this (it tries candidates directly to
+    avoid a slow extra cold-start of the self-contained binary). This remains
+    for dependency/availability checks where a definitive answer is wanted.
+    """
+    for path in _ytdlp_candidates():
+        if os.path.isfile(path) and _ytdlp_runs(path):
             return path
-    return shutil.which("yt-dlp")
+    which = shutil.which("yt-dlp")
+    if which and _ytdlp_runs(which):
+        return which
+    return None
 
 
 def check_dependencies() -> None:
@@ -346,10 +398,13 @@ def _download_twitter_direct(url: str, output_dir: Path) -> bool:
 # yt-dlp download
 # ---------------------------------------------------------------------------
 
-def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_files: set, quality: str = "best") -> bool:
+def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_files: set, quality: str = "best", ytdlp_bin: Optional[str] = None) -> tuple[bool, str]:
     """
     Try downloading via yt-dlp.
-    Returns True if successful, False otherwise.
+
+    Returns (success, diagnostic). On failure `diagnostic` carries the tail of
+    yt-dlp's own stderr so the caller can surface the real reason instead of a
+    generic "could not process this URL".
     """
     output_template = str(output_dir / "%(title).80s_%(id)s.%(ext)s")
 
@@ -391,21 +446,22 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
 
     ytdlp_args.append(url)
 
-    ytdlp_bin = _find_ytdlp()
+    if ytdlp_bin is None:
+        ytdlp_bin = _find_ytdlp()
     if not ytdlp_bin:
-        return False
+        return False, ""
 
     cmd = [ytdlp_bin] + ytdlp_args
 
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except FileNotFoundError:
-        return False
+    # NB: a binary with a dangling shebang (interpreter removed by a Python
+    # upgrade) raises OSError here at exec time. We let it propagate so the
+    # caller can transparently fall through to the next candidate.
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
 
     assert proc.stdout is not None
     stderr_lines: list[str] = []
@@ -425,6 +481,13 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
         stderr_lines = proc.stderr.readlines()
 
     proc.wait()
+
+    # Build a compact diagnostic from yt-dlp's own error output. yt-dlp prefixes
+    # real errors with "ERROR:"; prefer those lines, else fall back to the tail.
+    error_lines = [ln.strip() for ln in stderr_lines if ln.strip().startswith("ERROR:")]
+    if not error_lines:
+        error_lines = [ln.strip() for ln in stderr_lines if ln.strip()][-3:]
+    stderr_tail = " ".join(error_lines)[:500]
 
     # Find the downloaded file — check new files first, then fall back to
     # matching by video ID (yt-dlp may skip download if file already exists)
@@ -476,7 +539,7 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
         )
 
     if downloaded_file is None:
-        return False
+        return False, stderr_tail
 
     suffix = downloaded_file.suffix.lower()
 
@@ -505,7 +568,7 @@ def _download_via_ytdlp(url: str, output_dir: Path, platform: str, existing_file
         "file_size": downloaded_file.stat().st_size,
         "thumbnail_path": thumbnail_path or "",
     })
-    return True
+    return True, ""
 
 
 # ---------------------------------------------------------------------------
@@ -523,13 +586,47 @@ def download(url: str, output_dir: Path, platform: str, quality: str = "best") -
         if success:
             return
 
-    # Try yt-dlp
-    if _find_ytdlp():
-        success = _download_via_ytdlp(url, output_dir, platform, existing_files, quality)
+    # Try each yt-dlp candidate in order. We do NOT probe with `--version`
+    # first — that would force the (slow) self-contained binary to cold-start
+    # twice. Instead we attempt the real download; a broken install (dangling
+    # interpreter) raises OSError at exec time and we fall through to the next.
+    candidates = [c for c in _ytdlp_candidates() if os.path.isfile(c)]
+    which = shutil.which("yt-dlp")
+    if which and which not in candidates:
+        candidates.append(which)
+
+    executed_any = False
+    last_diagnostic = ""
+    for cand in candidates:
+        try:
+            success, diagnostic = _download_via_ytdlp(
+                url, output_dir, platform, existing_files, quality, cand
+            )
+        except OSError as e:
+            # This binary can't run (e.g. its interpreter was removed). Try next.
+            last_diagnostic = f"{os.path.basename(cand)} could not start: {e}"
+            continue
+        executed_any = True
         if success:
             return
+        # It ran but couldn't produce the media — a different binary won't help.
+        last_diagnostic = diagnostic or last_diagnostic
+        break
 
-    die("Download failed. yt-dlp could not process this URL.", "ALL_METHODS_FAILED")
+    if not executed_any:
+        msg = (
+            "yt-dlp is not installed or is broken (this often happens after a "
+            "Python upgrade leaves its interpreter dangling). Reinstall the "
+            "self-contained binary: "
+            "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos "
+            "-o ~/.local/bin/yt-dlp && chmod +x ~/.local/bin/yt-dlp"
+        )
+        die(msg, "YTDLP_UNAVAILABLE")
+
+    message = "Download failed. yt-dlp could not process this URL."
+    if last_diagnostic:
+        message += f" ({last_diagnostic})"
+    die(message, "ALL_METHODS_FAILED")
 
 
 # ---------------------------------------------------------------------------

@@ -236,6 +236,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func commandExists(_ name: String) -> Bool {
+        // A copy bundled inside the app (e.g. yt-dlp) is self-contained and
+        // always wins — it works even when the user's system install is broken.
+        if let bundled = Bundle.main.url(forResource: name, withExtension: nil)?.path,
+           FileManager.default.isExecutableFile(atPath: bundled) {
+            return true
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             "/opt/homebrew/bin/\(name)",

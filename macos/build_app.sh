@@ -45,8 +45,32 @@ if [ -d "$ENGINE_DIR" ]; then
     cp "$ENGINE_DIR/download_manager.py" "$APP_DIR/Contents/Resources/download_manager.py"
 fi
 
+# Bundle a self-contained yt-dlp binary next to the engine. This makes ClipGrab
+# immune to the user's Python being upgraded/removed (the standalone build has
+# no external interpreter dependency). download_manager.py prefers this copy.
+YTDLP_BUNDLED="$APP_DIR/Contents/Resources/yt-dlp"
+YTDLP_CACHE="$SCRIPT_DIR/.build/yt-dlp_macos"
+echo "Bundling standalone yt-dlp..."
+if [ ! -f "$YTDLP_CACHE" ]; then
+    curl -L --fail -o "$YTDLP_CACHE" \
+        https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos
+fi
+cp "$YTDLP_CACHE" "$YTDLP_BUNDLED"
+chmod +x "$YTDLP_BUNDLED"
+
+# Sign the bundled binary first (hardened runtime) so notarization accepts it.
+# It runs as its own process, so it needs the entitlements directly — notably
+# disable-library-validation, which the standalone (PyInstaller) build requires.
+codesign --force --options runtime --timestamp \
+  --entitlements "$ENTITLEMENTS" \
+  --sign "$IDENTITY" \
+  "$YTDLP_BUNDLED"
+
 echo "Signing .app..."
-codesign --deep --force --verify --verbose \
+# No --deep: the bundled yt-dlp in Resources was already signed (with hardened
+# runtime + entitlements) above; --deep would re-sign and strip that. Signing
+# the bundle here signs the main executable and seals the pre-signed binary.
+codesign --force --verify --verbose \
   --options runtime \
   --entitlements "$ENTITLEMENTS" \
   --sign "$IDENTITY" \

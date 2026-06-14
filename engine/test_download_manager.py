@@ -12,10 +12,14 @@ import json
 import subprocess
 import sys
 import os
+import stat
 import tempfile
 import pytest
 
 SCRIPT = os.path.join(os.path.dirname(__file__), "download_manager.py")
+
+sys.path.insert(0, os.path.dirname(__file__))
+import download_manager as dm  # noqa: E402
 
 
 def run_dm(*args, cwd=None):
@@ -188,6 +192,132 @@ class TestPlatformDetection:
         code = self._get_error_code(url)
         assert code != "INVALID_URL", f"URL wrongly rejected as invalid: {url}"
 
+
+
+# ---------------------------------------------------------------------------
+# yt-dlp discovery resilience (no network needed)
+# ---------------------------------------------------------------------------
+
+
+def _make_exe(path, body):
+    """Write an executable shell script at `path`."""
+    with open(path, "w") as f:
+        f.write(body)
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+class TestYtdlpRuns:
+    def test_working_binary_runs(self, tmp_path):
+        good = str(tmp_path / "yt-dlp")
+        _make_exe(good, "#!/bin/sh\necho 2026.01.01\n")
+        assert dm._ytdlp_runs(good) is True
+
+    def test_broken_shebang_does_not_run(self, tmp_path):
+        # Mirrors the real failure: a script whose interpreter no longer exists.
+        bad = str(tmp_path / "yt-dlp")
+        _make_exe(bad, "#!/no/such/python3.13\nprint('hi')\n")
+        assert dm._ytdlp_runs(bad) is False
+
+    def test_nonzero_exit_does_not_run(self, tmp_path):
+        bad = str(tmp_path / "yt-dlp")
+        _make_exe(bad, "#!/bin/sh\nexit 1\n")
+        assert dm._ytdlp_runs(bad) is False
+
+    def test_missing_file_does_not_run(self, tmp_path):
+        assert dm._ytdlp_runs(str(tmp_path / "nope")) is False
+
+    def test_empty_path_does_not_run(self):
+        assert dm._ytdlp_runs("") is False
+
+
+class TestFindYtdlp:
+    def test_skips_broken_prefers_working(self, tmp_path, monkeypatch):
+        broken = str(tmp_path / "broken-yt-dlp")
+        working = str(tmp_path / "working-yt-dlp")
+        _make_exe(broken, "#!/no/such/python\nx\n")
+        _make_exe(working, "#!/bin/sh\necho 2026.01.01\n")
+        # Broken listed first — must be skipped in favour of the working one.
+        monkeypatch.setattr(dm, "_ytdlp_candidates", lambda: [broken, working])
+        monkeypatch.setattr(dm.shutil, "which", lambda _: None)
+        assert dm._find_ytdlp() == working
+
+    def test_returns_none_when_all_broken(self, tmp_path, monkeypatch):
+        broken = str(tmp_path / "broken-yt-dlp")
+        _make_exe(broken, "#!/no/such/python\nx\n")
+        monkeypatch.setattr(dm, "_ytdlp_candidates", lambda: [broken])
+        monkeypatch.setattr(dm.shutil, "which", lambda _: None)
+        assert dm._find_ytdlp() is None
+
+    def test_bundled_binary_is_first_candidate(self):
+        # A binary shipped next to the script must be preferred over system ones.
+        script_dir = os.path.dirname(os.path.abspath(dm.__file__))
+        bundled = os.path.join(script_dir, "yt-dlp.exe" if sys.platform == "win32" else "yt-dlp")
+        assert dm._ytdlp_candidates()[0] == bundled
+
+
+class TestDownloadCandidateHandling:
+    """download() tries each candidate, falling through binaries that can't run."""
+
+    def test_emits_ytdlp_unavailable_when_none_present(self, tmp_path, monkeypatch):
+        captured = []
+        monkeypatch.setattr(dm, "_ytdlp_candidates", lambda: [])
+        monkeypatch.setattr(dm.shutil, "which", lambda _: None)
+        monkeypatch.setattr(dm, "emit", lambda obj: captured.append(obj))
+        with pytest.raises(SystemExit):
+            dm.download("https://www.instagram.com/reel/ABC/", tmp_path, "instagram")
+        assert captured[-1]["code"] == "YTDLP_UNAVAILABLE"
+
+    def test_unavailable_when_all_candidates_fail_to_exec(self, tmp_path, monkeypatch):
+        # A present-but-broken binary raises OSError at exec — must be treated
+        # as "no working yt-dlp", not "URL failed".
+        broken = str(tmp_path / "yt-dlp")
+        _make_exe(broken, "#!/bin/sh\n")
+        captured = []
+        monkeypatch.setattr(dm, "_ytdlp_candidates", lambda: [broken])
+        monkeypatch.setattr(dm.shutil, "which", lambda _: None)
+        monkeypatch.setattr(dm, "emit", lambda obj: captured.append(obj))
+
+        def boom(*a, **k):
+            raise OSError("bad interpreter")
+        monkeypatch.setattr(dm, "_download_via_ytdlp", boom)
+        with pytest.raises(SystemExit):
+            dm.download("https://www.instagram.com/reel/ABC/", tmp_path, "instagram")
+        assert captured[-1]["code"] == "YTDLP_UNAVAILABLE"
+
+    def test_falls_through_broken_to_working(self, tmp_path, monkeypatch):
+        # First candidate can't exec; second works. download() must succeed.
+        broken = str(tmp_path / "broken")
+        working = str(tmp_path / "working")
+        _make_exe(broken, "#!/bin/sh\n")
+        _make_exe(working, "#!/bin/sh\n")
+        monkeypatch.setattr(dm, "_ytdlp_candidates", lambda: [broken, working])
+        monkeypatch.setattr(dm.shutil, "which", lambda _: None)
+
+        calls = []
+
+        def fake_dl(url, out, plat, existing, quality, ytdlp_bin):
+            calls.append(ytdlp_bin)
+            if ytdlp_bin == broken:
+                raise OSError("bad interpreter")
+            return True, ""
+        monkeypatch.setattr(dm, "_download_via_ytdlp", fake_dl)
+        # Should NOT raise — the working binary handles it.
+        dm.download("https://www.instagram.com/reel/ABC/", tmp_path, "instagram")
+        assert calls == [broken, working]
+
+    def test_diagnostic_appended_to_failure(self, tmp_path, monkeypatch):
+        existing = str(tmp_path / "yt-dlp")
+        _make_exe(existing, "#!/bin/sh\n")
+        captured = []
+        monkeypatch.setattr(dm, "_ytdlp_candidates", lambda: [existing])
+        monkeypatch.setattr(dm.shutil, "which", lambda _: None)
+        monkeypatch.setattr(dm, "_download_via_ytdlp", lambda *a, **k: (False, "ERROR: Video unavailable"))
+        monkeypatch.setattr(dm, "emit", lambda obj: captured.append(obj))
+        with pytest.raises(SystemExit):
+            dm.download("https://www.instagram.com/reel/ABC/", tmp_path, "instagram")
+        err = captured[-1]
+        assert err["code"] == "ALL_METHODS_FAILED"
+        assert "Video unavailable" in err["message"]
 
 
 # ---------------------------------------------------------------------------
